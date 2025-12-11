@@ -7,7 +7,7 @@
     
     <!-- Configuración PWA -->
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#050509" />
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2964/2964514.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,25 +17,33 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
+      :root {
+        /* BRANDING: MVP VENTURES */
+        --mvp-orange: #FF5B0B; /* Primary Brand Color */
+        --mvp-gold: #FBBF24;   /* Secondary/Accent */
+        --mvp-bg: #050509;     /* Deep Black Background */
+        --mvp-card: #130816;   /* Deep Purple Card Background */
+      }
+
       body {
         font-family: 'Manrope', sans-serif;
-        background-color: #09090b; /* zinc-950 */
+        background-color: var(--mvp-bg);
         color: #ffffff;
-        overscroll-behavior-y: none; /* Previene el rebote en móviles */
+        overscroll-behavior-y: none;
       }
       /* Custom scrollbar for dark theme */
       ::-webkit-scrollbar {
         width: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #18181b; 
+        background: var(--mvp-bg); 
       }
       ::-webkit-scrollbar-thumb {
         background: #3f3f46; 
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #52525b; 
+        background: var(--mvp-orange); 
       }
       
       /* Animaciones básicas */
@@ -60,12 +68,15 @@
           extend: {
             colors: {
               mvp: {
-                black: '#09090b',
-                gold: '#f59e0b', /* amber-500 */
-                orange: '#ea580c', /* orange-600 */
-                darkgray: '#18181b', /* zinc-900 */
-                lightgray: '#27272a', /* zinc-800 */
+                black: '#050509',      /* Main Background */
+                dark: '#130816',       /* Card Background */
+                orange: 'var(--mvp-orange)', /* Dynamic Primary */
+                gold: 'var(--mvp-gold)',     /* Dynamic Secondary */
               }
+            },
+            backgroundImage: {
+              'mvp-gradient': 'linear-gradient(135deg, #130816 0%, #050509 100%)',
+              'mvp-accent-gradient': 'linear-gradient(135deg, var(--mvp-orange) 0%, #ea580c 100%)',
             }
           }
         }
@@ -83,7 +94,8 @@
     "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
     "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "jspdf": "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
   }
 }
 </script>

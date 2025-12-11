@@ -4,7 +4,7 @@ import {
   Users, Activity, Dumbbell, Crown, ChevronRight, Menu, X, 
   Sparkles, Loader2, AlertCircle, DollarSign, 
   Edit2, Save, User as UserIcon, Clock, Trash2, Banknote, 
-  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer
+  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin
 } from 'lucide-react';
 import { Client, Routine, User as AppUser, DietPlan, ClientPaymentInfo, PlanInterval } from './types';
 import { generateWorkoutRoutine, generateDietPlan } from './services/geminiService';
@@ -28,6 +28,7 @@ import { checkReminders, requestNotificationPermission } from './utils/reminderE
 import PaymentCalendar from './components/PaymentCalendar';
 import TrainerLandingEditor from './components/TrainerLandingEditor';
 import TrainerPublicPage from './components/TrainerPublicPage';
+import { COUNTRIES } from './data/countries';
 
 // --- HELPERS ---
 const convertTo12Hour = (time24: string) => {
@@ -621,6 +622,13 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                             </div>
                         </div>
                         <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+                            <h3 className="text-sm font-bold text-zinc-400 mb-3 uppercase">Ubicación</h3>
+                            <div className="flex items-center gap-2 text-white">
+                                <MapPin size={16} className="text-mvp-gold" />
+                                <span>{client.country || 'No especificado'}</span>
+                            </div>
+                        </div>
+                        <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
                             <h3 className="text-sm font-bold text-zinc-400 mb-3 uppercase">Contacto</h3>
                             <div className="space-y-2 text-sm">
                                 <div className="flex justify-between"><span className="text-zinc-500">Email</span> <span className="text-white">{client.email || '-'}</span></div>
@@ -816,6 +824,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData }: { onClose: () => vo
         gender: 'male',
         age: '', weight: '', height: '',
         experienceLevel: 'beginner',
+        country: 'Perú',
         goals: [] as string[],
         trainingDays: [] as string[],
         trainingTime24: ''
@@ -833,6 +842,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData }: { onClose: () => vo
                 weight: String(initialData.weight || ''),
                 height: String(initialData.height || ''),
                 experienceLevel: initialData.experienceLevel,
+                country: initialData.country || 'Perú',
                 goals: initialData.goals || [],
                 trainingDays: initialData.trainingDays || [],
                 trainingTime24: convertTo24Hour(initialData.trainingTime || initialData.trainingHour || null)
@@ -881,6 +891,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData }: { onClose: () => vo
             weight: formData.weight ? Number(formData.weight) : null,
             height: formData.height ? Number(formData.height) : null,
             experienceLevel: formData.experienceLevel,
+            country: formData.country,
             goals: formData.goals,
             trainingDays: formData.trainingDays,
             trainingTime: convertTo12Hour(formData.trainingTime24),
@@ -927,6 +938,17 @@ const ClientFormModal = ({ onClose, onSubmit, initialData }: { onClose: () => vo
                                 className="w-full bg-black border border-zinc-700 text-white rounded-xl px-4 py-3 focus:border-mvp-gold outline-none" 
                                 placeholder="Teléfono" 
                             />
+                         </div>
+                         {/* Country Selector */}
+                         <div>
+                            <label className="text-[10px] text-zinc-500 font-bold mb-1 block">País (para dieta local)</label>
+                            <select 
+                                value={formData.country} 
+                                onChange={e => setFormData({...formData, country: e.target.value})}
+                                className="w-full bg-black border border-zinc-700 text-white rounded-xl px-4 py-3 focus:border-mvp-gold outline-none"
+                            >
+                                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
                          </div>
                     </div>
 
