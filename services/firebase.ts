@@ -250,7 +250,7 @@ export const createClient = async (trainerId: string, data: Partial<Client>) => 
         phone: data.phone,
         gender: data.gender || 'male',
         age: data.age || null,
-        country: data.country || 'Perú', // Default a Perú si no hay país
+        country: data.country ?? 'Perú', // Default a Perú si no hay país
         avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || 'User')}&background=random`,
 
         // Datos Físicos

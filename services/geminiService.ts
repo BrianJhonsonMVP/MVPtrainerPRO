@@ -198,6 +198,7 @@ export const generateDietPlan = async (
       - USA SÓLO nombres de platos, ingredientes y jerga culinaria típica de ${country}.
       - NO uses nombres genéricos o de otros países (ej: Si es Perú, usa "Palta" no "Aguacate", "Pollo a la plancha" con "Arroz", etc.).
       - Sugiere desayunos, almuerzos y cenas que una persona común en ${country} comería o podría preparar fácilmente.
+      - Evita comidas muy exóticas o difíciles de conseguir en ${country}.
 
       FORMATO TÉCNICO:
       1. Calcula los macros diarios ideales.
