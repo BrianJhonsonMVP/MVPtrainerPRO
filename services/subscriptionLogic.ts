@@ -1,6 +1,12 @@
 
 import { User, LimitCheckResult } from '../types';
 
+export const LIMITS_CONFIG = {
+  MAX_CLIENTS_FREE: 2,
+  MAX_ROUTINES_PER_CLIENT_WEEKLY: 1,
+  MAX_DIETS_PER_CLIENT_WEEKLY: 1
+};
+
 export type Feature =
   | 'createClient'
   | 'generateRoutine'
@@ -29,7 +35,6 @@ export function resetWeeklyUsageIfNeeded(user: User, now: Date): User {
           weekStart: currentWeek,
           aiRoutinesByClient: {},
           aiDietsByClient: {},
-          // Mantener legacy fields reseteados por si acaso
           routinesGenerated: 0,
           dietsGenerated: 0,
           lastReset: now.toISOString()
@@ -48,7 +53,6 @@ export function isTrialExpired(user: User, now: Date): boolean {
 }
 
 export function normalizeSubscription(user: User, now: Date): User {
-  // Si estaba en trial y ya pasó la fecha, pásalo a free
   if (user.subscription.type === 'trial' && isTrialExpired(user, now)) {
     return {
       ...user,
@@ -66,27 +70,19 @@ export function canUseFeature(
   feature: Feature,
   context?: { clientId?: string; clientsCount?: number; now?: Date }
 ): LimitCheckResult {
-  const now = context?.now ?? new Date();
-
-  // NOTA: Se asume que el usuario ya ha pasado por normalizeSubscription y resetWeeklyUsageIfNeeded antes de llamar a esto,
-  // o se puede hacer una validación "in-flight" pero sin modificar el objeto persistido aquí (solo lectura).
-  // Para seguridad, usaremos los valores del user pasado.
-
   const sub = user.subscription;
 
-  // PRO: todo ilimitado
   if (sub.type === 'pro' && sub.isActive) {
     return { allowed: true };
   }
 
   if (feature === 'createClient') {
     const clientsCount = context?.clientsCount ?? 0;
-    // FREE y TRIAL: máximo 2 clientes
-    if (clientsCount >= 2) {
+    if (clientsCount >= LIMITS_CONFIG.MAX_CLIENTS_FREE) {
       return {
         allowed: false,
         requiresUpgrade: true,
-        reason: 'Has alcanzado el límite de 2 clientes en tu plan actual.',
+        reason: `Has alcanzado el límite de ${LIMITS_CONFIG.MAX_CLIENTS_FREE} clientes en tu plan actual.`,
       };
     }
     return { allowed: true };
@@ -95,40 +91,29 @@ export function canUseFeature(
   if (feature === 'generateRoutine' || feature === 'generateDiet') {
     const clientId = context?.clientId;
     if (!clientId) {
-      return {
-        allowed: false,
-        reason: 'Error interno: Falta ID del cliente.',
-      };
+      return { allowed: false, reason: 'Error interno: Falta ID del cliente.' };
     }
 
     const usage = sub.usage;
-    const isRoutine = feature === 'generateRoutine';
-
-    // FREE y TRIAL: Limites por cliente por semana
-    if (sub.type === 'free' || sub.type === 'trial') {
-      if (isRoutine) {
-        // Fallback a 0 si no existe el registro
-        const currentCount = usage.aiRoutinesByClient?.[clientId] ?? 0;
-        if (currentCount >= 1) {
-          return {
-            allowed: false,
-            requiresUpgrade: true,
-            reason: 'Solo puedes generar 1 rutina con IA por semana para este cliente.',
-          };
-        }
-      } else {
-        const currentCount = usage.aiDietsByClient?.[clientId] ?? 0;
-        if (currentCount >= 1) {
-          return {
-            allowed: false,
-            requiresUpgrade: true,
-            reason: 'Solo puedes generar 1 dieta con IA por semana para este cliente.',
-          };
-        }
+    if (feature === 'generateRoutine') {
+      const currentCount = usage.aiRoutinesByClient?.[clientId] ?? 0;
+      if (currentCount >= LIMITS_CONFIG.MAX_ROUTINES_PER_CLIENT_WEEKLY) {
+        return {
+          allowed: false,
+          requiresUpgrade: true,
+          reason: `Solo puedes generar ${LIMITS_CONFIG.MAX_ROUTINES_PER_CLIENT_WEEKLY} rutina con IA por semana para este cliente.`,
+        };
+      }
+    } else {
+      const currentCount = usage.aiDietsByClient?.[clientId] ?? 0;
+      if (currentCount >= LIMITS_CONFIG.MAX_DIETS_PER_CLIENT_WEEKLY) {
+        return {
+          allowed: false,
+          requiresUpgrade: true,
+          reason: `Solo puedes generar ${LIMITS_CONFIG.MAX_DIETS_PER_CLIENT_WEEKLY} dieta con IA por semana para este cliente.`,
+        };
       }
     }
-
-    return { allowed: true };
   }
 
   return { allowed: true };
@@ -140,7 +125,6 @@ export function registerUsage(
   context: { clientId: string; now?: Date }
 ): User {
   const now = context?.now ?? new Date();
-  // Aseguramos que el uso esté reseteado para la semana actual antes de incrementar
   let updatedUser = resetWeeklyUsageIfNeeded(user, now);
 
   const sub = updatedUser.subscription;
@@ -159,7 +143,6 @@ export function registerUsage(
             ...usage.aiRoutinesByClient,
             [clientId]: currentCount + 1,
           },
-          // Legacy counter update
           routinesGenerated: (usage.routinesGenerated || 0) + 1
         },
       },
@@ -178,7 +161,6 @@ export function registerUsage(
             ...usage.aiDietsByClient,
             [clientId]: currentCount + 1,
           },
-          // Legacy counter update
           dietsGenerated: (usage.dietsGenerated || 0) + 1
         },
       },
@@ -188,19 +170,14 @@ export function registerUsage(
   return updatedUser;
 }
 
-// Banner de upgrade:
 export function shouldShowUpgradeBanner(
   user: User,
   lastBannerShownAt: number | null,
   nowTs: number
 ): boolean {
-  // PRO: nunca muestra banner
   if (user.subscription.type === 'pro') return false;
-
-  // TRIAL: no muestra banner, aunque tenga límites
   if (user.subscription.type === 'trial') return false;
 
-  // FREE: mostrar cada ~10 minutos de uso
   const TEN_MIN = 10 * 60 * 1000;
   if (!lastBannerShownAt) return true;
   if (nowTs - lastBannerShownAt >= TEN_MIN) return true;

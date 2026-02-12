@@ -261,12 +261,12 @@ export const createClient = async (trainerId: string, data: Partial<Client>) => 
         // Objetivos
         mainGoal: mainGoalComputed,
         goals: clientGoals,
-        secondaryGoals: [], // Deprecado
+        // Fixed: removed non-existent secondaryGoals
 
         // Agenda
         trainingDays: data.trainingDays || [],
         trainingTime: data.trainingTime || null,
-        schedule: data.schedule || [],
+        // Fixed: removed non-existent schedule
         
         // Pagos
         paymentInfo: data.paymentInfo || {
@@ -279,9 +279,8 @@ export const createClient = async (trainerId: string, data: Partial<Client>) => 
         
         status: 'active',
         createdAt: new Date().toISOString(),
-        joinedAt: new Date().toISOString().split('T')[0],
         routines: [],
-        dietPlan: null
+        dietPlan: undefined
     };
 
     allClients.push(newClient);

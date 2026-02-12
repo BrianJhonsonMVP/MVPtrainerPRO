@@ -2,15 +2,13 @@
 export type SubscriptionType = 'trial' | 'free' | 'pro';
 export type PlanInterval = 'monthly' | 'semiannual' | 'yearly';
 
-// Actualizado según requerimiento
 export type PaymentMethod = 'efectivo' | 'yape' | 'plin' | 'transferencia' | 'tarjeta' | 'otro';
 export type PaymentStatus = 'sin_registro' | 'al_dia' | 'pendiente' | 'atrasado';
 
 export interface SubscriptionUsage {
-  weekStart: string; // ISO date (Lunes de la semana actual)
-  aiRoutinesByClient: Record<string, number>; // clientId -> count
-  aiDietsByClient: Record<string, number>;    // clientId -> count
-  // Mantener legacy por si acaso
+  weekStart: string;
+  aiRoutinesByClient: Record<string, number>;
+  aiDietsByClient: Record<string, number>;
   routinesGenerated?: number;
   dietsGenerated?: number;
   lastReset?: string;
@@ -19,11 +17,13 @@ export interface SubscriptionUsage {
 export interface UserSubscription {
   type: SubscriptionType;
   isActive: boolean;
-  trialEndsAt?: string | null;  // ISO Date (Solo Trial)
-  expiresAt?: string | null;    // ISO Date (Solo PRO)
-  upgradedAt?: string | null;   // ISO Date (Cuando pasó a PRO)
-  planInterval?: PlanInterval;  // El plan que compró
+  trialEndsAt?: string | null;
+  expiresAt?: string | null;    // Mapeado a current_period_end de Stripe
+  upgradedAt?: string | null;
+  planInterval?: PlanInterval;
   usage: SubscriptionUsage;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
 }
 
 export interface BrandingConfig {
@@ -54,103 +54,67 @@ export interface User {
   publicProfile?: PublicProfile;
 }
 
-export interface ScheduleItem {
-  day: string; // "Lunes", "Martes"...
-  time: string; // "07:00"
-}
-
-export interface ClientPaymentInfo {
-  monthlyFee: number;
-  paymentMethod: PaymentMethod;
-  status: PaymentStatus;
-  lastPaidAt: string | null;    // ISO Date
-  nextPaymentAt: string | null; // ISO Date
-}
-
-// Estructura de Rutina
-export interface Exercise {
-  name: string;
-  sets: number;
-  reps: string;
-  rest?: string;
-  notes?: string;
-  day?: string;
-}
-
 export interface Routine {
   id: string;
   name: string;
   description: string;
-  exercises: Exercise[];
+  exercises: any[];
   tags: string[];
 }
 
-// --- ESTRUCTURA DE DIETA V2 (SEMANAL) ---
-export type MealTime = 'Desayuno' | 'Snack' | 'Almuerzo' | 'Merienda' | 'Cena';
-
+// Added DietPlan and associated interfaces
 export interface DietMeal {
-  name: string; // Nombre corto del plato
-  timeOfDay: MealTime;
-  description: string; // Ingredientes o explicación
+  timeOfDay: string;
+  name: string;
+  description: string;
 }
 
 export interface DietDay {
-  day: string; // 'Lunes', 'Martes', etc.
+  day: string;
   meals: DietMeal[];
 }
 
 export interface DietPlan {
   title: string;
-  // Macros generales (Objetivos diarios promedio)
+  notes?: string;
   totalKcal: number;
   totalProtein: number;
   totalCarbs: number;
   totalFats: number;
   days: DietDay[];
-  notes?: string;
 }
 
-export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
+// Added ClientPaymentInfo for strict typing
+export interface ClientPaymentInfo {
+  monthlyFee: number;
+  paymentMethod: PaymentMethod;
+  status: PaymentStatus;
+  lastPaidAt: string | null;
+  nextPaymentAt: string | null;
+}
 
 export interface Client {
   id: string;
   trainerId: string;
-
-  // Datos Personales
   name: string;
   email?: string;
   phone?: string;
   gender: 'male' | 'female' | 'other';
   age: number | null;
-  country?: string; // País del cliente
+  country?: string;
   avatarUrl: string;
-
-  // Datos Físicos
   weight: number | null;
   height: number | null;
-  experienceLevel: ExperienceLevel;
-
-  // Objetivos
+  experienceLevel: string;
   mainGoal: string;
   goals: string[];
-  secondaryGoals?: string[]; // Deprecado
-
-  // Entrenamiento
   trainingDays: string[];
-  trainingHour?: string;
   trainingTime: string | null;
-  schedule?: ScheduleItem[];
-
-  // IA Data
   routines: Routine[];
-  dietPlan?: DietPlan | null;
-
-  // Pagos
-  paymentInfo: ClientPaymentInfo;
-
+  dietPlan?: DietPlan; // Fixed any to DietPlan
+  paymentInfo: ClientPaymentInfo; // Fixed inline to ClientPaymentInfo
   status: 'active' | 'inactive';
   createdAt: string;
-  joinedAt: string;
 }
 
 export interface LimitCheckResult {
