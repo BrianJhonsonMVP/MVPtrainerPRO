@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { getTrainerProfileById } from '../services/firebase';
+import { dbProvider } from '../data';
 import { User } from '../types';
 import { MessageSquare, CheckCircle, Target, Loader2 } from 'lucide-react';
 
@@ -14,7 +14,7 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId }) => {
 
     useEffect(() => {
         const load = async () => {
-            const data = await getTrainerProfileById(trainerId);
+            const data = await dbProvider.getProfile(trainerId);
             setTrainer(data);
             setLoading(false);
         };

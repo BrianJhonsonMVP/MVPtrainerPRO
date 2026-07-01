@@ -24,6 +24,7 @@ export interface UserSubscription {
   usage: SubscriptionUsage;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  currentPeriodEnd?: string;
 }
 
 export interface BrandingConfig {
@@ -43,6 +44,15 @@ export interface PublicProfile {
   galleryImages: string[];
 }
 
+export interface TrainerUsage {
+  trainer_id: string;
+  clients_created_total: number;
+  ai_routines_generated_total: number;
+  ai_diets_generated_total: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface User {
   uid: string;
   email: string;
@@ -52,6 +62,7 @@ export interface User {
   subscription: UserSubscription;
   branding?: BrandingConfig;
   publicProfile?: PublicProfile;
+  trainerUsage?: TrainerUsage;
 }
 
 export interface Routine {
@@ -60,6 +71,13 @@ export interface Routine {
   description: string;
   exercises: any[];
   tags: string[];
+  title?: string; // Standardized for AI
+  summary?: string; // Standardized for AI
+  days?: any[]; // Standardized for AI (List of days with exercises)
+  warnings?: string[];
+  recommendations?: string[];
+  source?: 'ai' | 'fallback' | 'manual';
+  version?: number;
 }
 
 // Added DietPlan and associated interfaces
@@ -77,11 +95,18 @@ export interface DietDay {
 export interface DietPlan {
   title: string;
   notes?: string;
+  summary?: string; // Standardized for AI
+  daily_calories?: number; // Standardized for AI
   totalKcal: number;
   totalProtein: number;
   totalCarbs: number;
   totalFats: number;
   days: DietDay[];
+  meals?: any[]; // Flat list if AI returns it thus
+  warnings?: string[];
+  recommendations?: string[];
+  source?: 'ai' | 'fallback' | 'manual';
+  version?: number;
 }
 
 // Added ClientPaymentInfo for strict typing

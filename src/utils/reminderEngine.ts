@@ -80,7 +80,7 @@ export const checkReminders = (
 
   const now = new Date();
   const sentReminders = getSentReminders();
-  const isPro = user.subscription.type === 'pro' && user.subscription.isActive;
+  const isPro = user?.subscription?.type === 'pro' && user?.subscription?.isActive;
   
   // Nombres de días en español para coincidir con client.trainingDays
   const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -90,7 +90,7 @@ export const checkReminders = (
     // --- 1. RECORDATORIOS DE ENTRENAMIENTO (Para TODOS: Free, Trial, Pro) ---
     // Regla: Notificar 1 hora antes
     if (client.trainingDays && client.trainingDays.includes(currentDayName) && client.status === 'active') {
-      const workoutTime = getWorkoutDateToday(client.trainingTime || client.trainingHour || null);
+      const workoutTime = getWorkoutDateToday(client.trainingTime || null);
       
       if (workoutTime) {
         const diffMs = workoutTime.getTime() - now.getTime();
@@ -103,7 +103,7 @@ export const checkReminders = (
           if (!sentReminders[key]) {
             sendNotification(
               `🏋️‍♂️ Entrenamiento en 1 hora`,
-              `Te toca entrenar a ${client.name} a las ${client.trainingTime || client.trainingHour}`,
+              `Te toca entrenar a ${client.name} a las ${client.trainingTime}`,
               client.avatarUrl,
               showToast
             );

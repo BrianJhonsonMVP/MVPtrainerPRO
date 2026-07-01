@@ -1,0 +1,7 @@
+
+import { supabaseProvider } from './supabaseProvider';
+import { IDBProvider } from './dbInterface';
+
+export const dbProvider: IDBProvider = supabaseProvider;
+
+console.log(`%c ACTIVE PROVIDER: ${dbProvider.name} `, "color: #fff; background: #7c3aed; padding: 3px; border-radius: 4px; font-weight: bold;");

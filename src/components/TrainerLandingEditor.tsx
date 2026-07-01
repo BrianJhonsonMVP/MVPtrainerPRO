@@ -1,18 +1,18 @@
 
 import React, { useState, useRef } from 'react';
-import { User, PublicProfile } from '../types';
-import { updateUserDoc } from '../services/firebase';
-import { Camera, Save, Plus, X, Globe, Phone, FileText, Lock, Crown, Download, Loader2 } from 'lucide-react';
+import { User as AppUser, PublicProfile } from '../types';
+import { dbProvider } from '../data';
+import { User, Camera, Save, Plus, X, Globe, Phone, FileText, Lock, Crown, Download, Loader2 } from 'lucide-react';
 import { generateTrainerCardPDF } from '../utils/pdfGenerator';
 
 interface Props {
-  user: User;
-  onUpdateUser: (user: User) => void;
+  user: AppUser;
+  onUpdateUser: (user: AppUser) => void;
   onShowPaywall: () => void;
 }
 
 const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywall }) => {
-  const isPro = user.subscription.type === 'pro' && user.subscription.isActive;
+  const isPro = user?.subscription?.type === 'pro' && user?.subscription?.isActive;
   
   const [profile, setProfile] = useState<PublicProfile>({
     description: user.publicProfile?.description || '',
@@ -51,7 +51,7 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
   const handleSave = async () => {
     setSaving(true);
     try {
-        const updatedUser = await updateUserDoc(user.uid, { publicProfile: profile });
+        const updatedUser = await dbProvider.updateUser(user.uid, { publicProfile: profile });
         if (updatedUser) onUpdateUser(updatedUser);
         alert('Perfil público actualizado');
     } catch (e) {

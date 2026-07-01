@@ -9,7 +9,7 @@ interface Props {
 }
 
 const PaymentCalendar: React.FC<Props> = ({ user, clients }) => {
-  const isPro = user.subscription.type === 'pro' && user.subscription.isActive;
+  const isPro = user?.subscription?.type === 'pro' && user?.subscription?.isActive;
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).getDay(); // 0 = Sunday

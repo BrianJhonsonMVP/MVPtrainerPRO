@@ -2,17 +2,18 @@
 import React, { useState, useEffect } from 'react';
 import { BrandingConfig, User } from '../types';
 import { Palette, Crown, Lock, Save, LayoutTemplate, Image as ImageIcon, RotateCcw } from 'lucide-react';
-import { updateUserDoc } from '../services/firebase';
+import { dbProvider } from '../data';
 import { applyBrandingToTheme, DEFAULT_BRANDING } from '../services/brandingService';
 
 interface BrandingSettingsProps {
   user: User;
   onUpdateUser: (user: User) => void;
   onShowPaywall: () => void;
+  requestConfirm: (config: any) => void;
 }
 
-const BrandingSettings: React.FC<BrandingSettingsProps> = ({ user, onUpdateUser, onShowPaywall }) => {
-  const isPro = user.subscription.type === 'pro';
+const BrandingSettings: React.FC<BrandingSettingsProps> = ({ user, onUpdateUser, onShowPaywall, requestConfirm }) => {
+  const isPro = user?.subscription?.type === 'pro';
   
   const [config, setConfig] = useState<BrandingConfig>({
     brandName: user.branding?.brandName || '',
@@ -29,18 +30,12 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({ user, onUpdateUser,
         // Aplicar cambios en tiempo real para "preview"
         applyBrandingToTheme(config);
     }
-    // Cleanup: Si desmonta sin guardar y no es el del usuario, revertir (opcional, pero buena UX)
-    return () => {
-       if (!saving) {
-         // Revertir al original del usuario si cancela (opcional, por simplicidad dejamos que persista la vista)
-       }
-    };
-  }, [config, isPro, saving]);
+  }, [config, isPro]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const updatedUser = await updateUserDoc(user.uid, { branding: config });
+      const updatedUser = await dbProvider.updateUser(user.uid, { branding: config });
       if (updatedUser) {
           onUpdateUser(updatedUser);
       }
@@ -52,18 +47,24 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({ user, onUpdateUser,
   };
 
   const handleReset = async () => {
-      if(!confirm("¿Restaurar colores y nombre originales?")) return;
-      setConfig(DEFAULT_BRANDING);
-      setSaving(true);
-      try {
-        const updatedUser = await updateUserDoc(user.uid, { branding: DEFAULT_BRANDING });
-        if(updatedUser) {
-            onUpdateUser(updatedUser);
-            applyBrandingToTheme(DEFAULT_BRANDING);
-        }
-      } finally {
-          setSaving(false);
-      }
+      requestConfirm({
+          title: "¿Restaurar marca?",
+          message: "¿Estás seguro de que deseas restaurar los colores y el nombre originales de la aplicación?",
+          type: 'warning',
+          onConfirm: async () => {
+              setConfig(DEFAULT_BRANDING);
+              setSaving(true);
+              try {
+                const updatedUser = await dbProvider.updateUser(user.uid, { branding: DEFAULT_BRANDING });
+                if(updatedUser) {
+                    onUpdateUser(updatedUser);
+                    applyBrandingToTheme(DEFAULT_BRANDING);
+                }
+              } finally {
+                  setSaving(false);
+              }
+          }
+      });
   };
 
   return (

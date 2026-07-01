@@ -11,7 +11,7 @@ interface DailyScheduleProps {
 }
 
 const DailySchedule: React.FC<DailyScheduleProps> = ({ user, clients, onOpenClient, onShowPaywall }) => {
-  const isPro = user.subscription.type === 'pro' && user.subscription.isActive;
+  const isPro = user?.subscription?.type === 'pro' && user?.subscription?.isActive;
 
   // --- DATE LOGIC ---
   const today = new Date();
@@ -46,7 +46,8 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({ user, clients, onOpenClie
     // Mapear a estructura de agenda
     const items = todayClients.map(client => ({
         clientRef: client,
-        time: client.trainingTime || client.trainingHour || 'Sin hora',
+        // Fix: Removed trainingHour as it is not present in Client interface
+        time: client.trainingTime || 'Sin hora',
         name: client.name,
         goal: client.mainGoal,
         avatar: client.avatarUrl
@@ -152,7 +153,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({ user, clients, onOpenClie
                         onClick={onShowPaywall}
                         className="w-full bg-gradient-to-r from-mvp-gold to-orange-500 hover:to-orange-400 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                     >
-                        <Crown size={18} className="text-black" /> Desbloquear Agenda PRO
+                        Desbloquear Agenda PRO
                     </button>
                 </div>
              </div>

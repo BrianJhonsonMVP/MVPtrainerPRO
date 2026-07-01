@@ -1,42 +1,37 @@
 
-import React, { ErrorInfo, ReactNode } from 'react';
+import React from 'react';
 import { AlertCircle, RotateCcw, Copy } from 'lucide-react';
 
-// Added children as optional to Props to satisfy JSX child checks in some environments
 interface Props {
-  children?: ReactNode;
+  children?: React.ReactNode;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
+  errorInfo: React.ErrorInfo | null;
 }
 
-/**
- * Componente ErrorBoundary para capturar errores en el ciclo de vida de React
- * y mostrar una interfaz de respaldo amigable.
- * Se utiliza React.Component explícitamente para asegurar que TypeScript reconozca las propiedades de clase.
- */
-export class ErrorBoundary extends React.Component<Props, State> {
+export class ErrorBoundary extends (React.Component as any) {
   constructor(props: Props) {
     super(props);
-    // Initializing state in constructor
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null
+    };
   }
 
-  static getDerivedStateFromError(error: Error): Partial<State> {
-    // Update state so the next render will show the fallback UI.
+  public static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Catch errors in any components below and re-render with error info
+  public componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ errorInfo });
     console.error("CRITICAL_UI_ERROR:", error, errorInfo);
   }
 
-  handleCopyError = () => {
+  private handleCopyError = () => {
     // Copy detailed error information to clipboard for debugging
     const errorLog = `
 Error: ${this.state.error?.message}
@@ -47,7 +42,7 @@ Component Stack: ${this.state.errorInfo?.componentStack}
     alert("Log de error copiado al portapapeles.");
   };
 
-  render() {
+  public render() {
     if (this.state.hasError) {
       // Render fallback UI when an error is caught
       return (

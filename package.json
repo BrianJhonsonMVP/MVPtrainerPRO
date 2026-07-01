@@ -4,18 +4,29 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "lint": "tsc --noEmit",
+    "start": "node dist/server.cjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
-    "lucide-react": "^0.555.0",
-    "recharts": "^3.5.1",
-    "react-dom": "^19.2.0",
-    "react": "^19.2.0",
+    "@supabase/supabase-js": "^2.97.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "cors": "^2.8.6",
+    "esbuild": "^0.28.0",
+    "express": "^5.2.1",
     "firebase": "^12.6.0",
-    "jspdf": "latest"
+    "framer-motion": "^12.39.0",
+    "jspdf": "latest",
+    "lucide-react": "^0.555.0",
+    "motion": "^12.39.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.5.1",
+    "tsx": "^4.22.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
