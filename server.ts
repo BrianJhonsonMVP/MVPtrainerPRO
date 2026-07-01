@@ -1,8 +1,12 @@
+import dotenv from "dotenv";
 import express from "express";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 async function startServer() {
   const app = express();
@@ -16,6 +20,10 @@ async function startServer() {
   const apiKey = geminiKey || googleKey || "";
   const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
+  console.log("GEMINI_API_KEY exists:", Boolean(geminiKey));
+  console.log("GEMINI_API_KEY length:", geminiKey?.length || 0);
+  console.log("GOOGLE_API_KEY exists:", Boolean(googleKey));
+  console.log("GOOGLE_API_KEY length:", googleKey?.length || 0);
   console.log("Gemini API configured:", Boolean(apiKey));
   console.log("Gemini model:", GEMINI_MODEL);
 
