@@ -1,14 +1,20 @@
-
-import { User, UserSubscription } from '../types';
+import { User } from '../types';
 import { LIMITS } from './subscriptionUtils';
+
+export const DEV_FORCE_PRO = false;
 
 export const getWeekStartISO = (date: Date = new Date()): string => {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Lunes
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
+};
+
+export const isActivePro = (user: User | null): boolean => {
+  if (!user) return false;
+  return DEV_FORCE_PRO || (user.subscription?.type === 'pro' && user.subscription?.isActive === true);
 };
 
 export const normalizeSubscription = (user: User, now: Date = new Date()): User => {
@@ -55,37 +61,46 @@ export const resetWeeklyUsageIfNeeded = (user: User, now: Date = new Date()): Us
   return user;
 };
 
+const getUsageOrBlock = (user: User) => {
+  if (!user.trainerUsage || !user.trainerUsage.trainer_id) {
+    return {
+      usage: null,
+      reason: 'No se pudo validar tu uso histórico en Supabase. Revisa la tabla public.trainer_usage y sus policies antes de continuar.'
+    };
+  }
+  return { usage: user.trainerUsage, reason: undefined };
+};
+
 export const canUseFeature = (user: User | null, feature: string, context: any = {}): { allowed: boolean; reason?: string } => {
   if (!user) return { allowed: false, reason: 'No hay sesión activa' };
-  const sub = user.subscription || { type: 'free', isActive: true };
+  if (isActivePro(user)) return { allowed: true };
 
-  const isPro = sub.type === 'pro' && sub.isActive;
-  if (isPro) return { allowed: true };
-
-  // Para usuarios no-PRO (incluyendo de prueba o free), aplicamos de forma limpia los límites históricos de supabase trainer_usage
-  const trainerUsage = user.trainerUsage;
+  const { usage, reason } = getUsageOrBlock(user);
+  if (!usage && ['createClient', 'generateRoutine', 'generateDiet'].includes(feature)) {
+    return { allowed: false, reason };
+  }
 
   switch (feature) {
     case 'createClient': {
-      const clientsCreatedTotal = trainerUsage?.clients_created_total ?? 0;
+      const clientsCreatedTotal = usage?.clients_created_total ?? 0;
       if (clientsCreatedTotal >= LIMITS.FREE_CLIENTS) {
         return { allowed: false, reason: `Límite de plan gratuito alcanzado: máximo ${LIMITS.FREE_CLIENTS} clientes históricos.` };
       }
       return { allowed: true };
     }
-    
+
     case 'generateRoutine': {
-      const routinesCreatedTotal = trainerUsage?.ai_routines_generated_total ?? 0;
-      if (routinesCreatedTotal >= 2) {
-        return { allowed: false, reason: "Límite de plan gratuito alcanzado: máximo 2 rutinas IA históricas." };
+      const routinesCreatedTotal = usage?.ai_routines_generated_total ?? 0;
+      if (routinesCreatedTotal >= LIMITS.FREE_AI_ROUTINES_HISTORICAL) {
+        return { allowed: false, reason: `Límite de plan gratuito alcanzado: máximo ${LIMITS.FREE_AI_ROUTINES_HISTORICAL} rutinas IA históricas.` };
       }
       return { allowed: true };
     }
 
     case 'generateDiet': {
-      const dietsCreatedTotal = trainerUsage?.ai_diets_generated_total ?? 0;
-      if (dietsCreatedTotal >= 2) {
-        return { allowed: false, reason: "Límite de plan gratuito alcanzado: máximo 2 dietas IA históricas." };
+      const dietsCreatedTotal = usage?.ai_diets_generated_total ?? 0;
+      if (dietsCreatedTotal >= LIMITS.FREE_AI_DIETS_HISTORICAL) {
+        return { allowed: false, reason: `Límite de plan gratuito alcanzado: máximo ${LIMITS.FREE_AI_DIETS_HISTORICAL} dietas IA históricas.` };
       }
       return { allowed: true };
     }
@@ -94,7 +109,8 @@ export const canUseFeature = (user: User | null, feature: string, context: any =
     case 'payments':
     case 'branding':
     case 'publicProfile':
-      return { allowed: false, reason: "Esta función es exclusiva para usuarios PRO." };
+    case 'whatsappShare':
+      return { allowed: false, reason: 'Esta función es exclusiva para usuarios PRO.' };
 
     default:
       return { allowed: true };
@@ -129,11 +145,10 @@ export const registerUsage = (user: User, feature: string, context: any = {}): U
   };
 };
 
-export const shouldShowUpgradeBanner = (user: User | null, lastShownAt: number, now: number): boolean => {
+export const shouldShowUpgradeBanner = (user: User | null, lastShownAt: number | null, now: number): boolean => {
   if (!user) return false;
-  if (user.subscription?.type === 'pro') return false;
-  
-  // Mostrar cada 24 horas si no es PRO
+  if (isActivePro(user)) return false;
+
   const oneDay = 24 * 60 * 60 * 1000;
-  return now - lastShownAt > oneDay;
+  return !lastShownAt || now - lastShownAt > oneDay;
 };
