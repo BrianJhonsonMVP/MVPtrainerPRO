@@ -1,9 +1,8 @@
-
 import { IDBProvider } from './dbInterface';
 import { supabase, isSupabaseEnabled } from '../services/supabaseClient';
 import { Client, User } from '../types';
+import { DEV_FORCE_PRO } from '../services/subscriptionLogic';
 
-// Helper para limitar el tiempo de espera de las peticiones
 const withTimeout = <T>(promise: Promise<T> | any, ms: number, operation: string): Promise<T> => {
   return Promise.race([
     promise as Promise<T>,
@@ -13,15 +12,40 @@ const withTimeout = <T>(promise: Promise<T> | any, ms: number, operation: string
   ]);
 };
 
-// Helper para reintentos con retraso progresivo (backoff)
 const retryPromise = async <T>(fn: () => Promise<T>, retries = 3, delay = 800): Promise<T> => {
   try {
     return await fn();
   } catch (error: any) {
     if (retries <= 0) throw error;
-    console.warn(`[RETRY] Intento fallido (${error.message || error}). Intentos restantes: ${retries}. Reintentando en ${delay}ms...`);
+    if ((import.meta as any).env?.DEV) {
+      console.warn(`[RETRY] Intento fallido (${error.message || error}). Intentos restantes: ${retries}. Reintentando en ${delay}ms...`);
+    }
     await new Promise(resolve => setTimeout(resolve, delay));
     return retryPromise(fn, retries - 1, delay * 1.5);
+  }
+};
+
+const requireSupabase = () => {
+  if (!isSupabaseEnabled() || !supabase) {
+    throw new Error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en .env.local.');
+  }
+  return supabase;
+};
+
+const requireAuthUser = async () => {
+  const client = requireSupabase();
+  const { data: { user }, error } = await client.auth.getUser();
+  if (error) throw error;
+  if (!user) throw new Error('No hay sesión activa para esta operación.');
+  return user;
+};
+
+const parseNotes = (notes: any) => {
+  if (!notes || typeof notes !== 'string') return {};
+  try {
+    return notes.startsWith('{') || notes.startsWith('[') ? JSON.parse(notes) : {};
+  } catch {
+    return {};
   }
 };
 
@@ -33,26 +57,20 @@ export const supabaseProvider: IDBProvider = {
   name: 'Supabase Cloud',
 
   async signUp(email, pass) {
-    if (!isSupabaseEnabled()) throw new Error("Supabase no está configurado.");
-    
-    console.log("Supabase: signUp start");
-    const { data, error } = (await withTimeout(supabase!.auth.signUp({ 
-      email, 
+    const client = requireSupabase();
+    const { data, error } = (await withTimeout(client.auth.signUp({
+      email,
       password: pass,
       options: { emailRedirectTo: window.location.origin }
-    }), 5000, "signUp")) as any;
-    
-    if (error) {
-      console.error("Supabase SignUp Error:", error);
-      throw error;
-    }
+    }), 5000, 'signUp')) as any;
 
-    // Caso crítico: El usuario se crea pero requiere confirmación de email
+    if (error) throw error;
+
     if (data.user && !data.session) {
-      return { 
-        user: data.user, 
-        message: "CONFIRM_EMAIL", 
-        detail: "Cuenta creada. Por seguridad, debes confirmar tu email antes de entrar." 
+      return {
+        user: data.user,
+        message: 'CONFIRM_EMAIL',
+        detail: 'Cuenta creada. Por seguridad, debes confirmar tu email antes de entrar.'
       };
     }
 
@@ -60,15 +78,9 @@ export const supabaseProvider: IDBProvider = {
   },
 
   async signIn(email, pass) {
-    if (!isSupabaseEnabled()) throw new Error("Supabase no está configurado.");
-    
-    const { data, error } = await supabase!.auth.signInWithPassword({ email, password: pass });
-    
-    if (error) {
-      console.error("Supabase SignIn Error:", error);
-      throw error;
-    }
-    
+    const client = requireSupabase();
+    const { data, error } = await client.auth.signInWithPassword({ email, password: pass });
+    if (error) throw error;
     return data;
   },
 
@@ -82,388 +94,215 @@ export const supabaseProvider: IDBProvider = {
 
   async getCurrentUser(forceFresh = false) {
     if (!isSupabaseEnabled()) return null;
-    
-    if (isFetchingUser) {
-        if ((import.meta as any).env?.DEV) {
-            console.log("Supabase: getCurrentUser skipped - fetch already in progress, returning last cache");
-        }
-        return lastFetchedUser;
-    }
+
+    if (isFetchingUser) return lastFetchedUser;
 
     const now = Date.now();
     if (!forceFresh && lastFetchedUser && (now - lastFetchTime < 60000)) {
-        if ((import.meta as any).env?.DEV) {
-            console.log("Supabase: returning recently active cached user profile:", lastFetchedUser.email);
-        }
-        return lastFetchedUser;
-    }
-
-    if ((import.meta as any).env?.DEV) {
-        console.log("Supabase: getCurrentUser starting fresh fetch");
+      return lastFetchedUser;
     }
 
     isFetchingUser = true;
-    if ((import.meta as any).env?.DEV) {
-        console.log("AUTH LOOP FIX ACTIVE: Fetching user profile from Supabase DB...");
-    }
 
     const fetchOperation = async () => {
-        if ((import.meta as any).env?.DEV) {
-            console.log("Supabase: auth.getSession start (inside retry container)");
-        }
-        
-        const { data: { session }, error: authError } = (await withTimeout(supabase!.auth.getSession(), 3000, "getSession")) as any;
-        if (authError) {
-            throw authError;
-        }
-        
-        const user = session?.user;
-        if ((import.meta as any).env?.DEV) {
-            console.log("Supabase: auth.getSession end", user ? "User found" : "No user");
-        }
-        
-        if (!user) return null;
-        
-        if ((import.meta as any).env?.DEV) {
-            console.log("Supabase: profiles fetch start for id", user.id);
-        }
-        
-        const { data: profile, error: profError } = (await withTimeout(
-            supabase!
-                .from('profiles')
-                .select('*')
-                .eq('id', user.id)
-                .single(),
-            3000,
-            "profilesFetch"
+      const client = requireSupabase();
+      const { data: { session }, error: authError } = (await withTimeout(client.auth.getSession(), 3000, 'getSession')) as any;
+      if (authError) throw authError;
+
+      const authUser = session?.user;
+      if (!authUser) return null;
+
+      const { data: profile, error: profError } = (await withTimeout(
+        client.from('profiles').select('*').eq('id', authUser.id).single(),
+        3000,
+        'profilesFetch'
+      )) as any;
+
+      if (profError && profError.code !== 'PGRST116') throw profError;
+
+      let resolvedProfile = profile;
+      if (!resolvedProfile) {
+        const { data: newProfile, error: createProfError } = (await withTimeout(
+          client
+            .from('profiles')
+            .insert({
+              id: authUser.id,
+              email: authUser.email!,
+              display_name: authUser.email?.split('@')[0] || 'User',
+              subscription_type: 'trial',
+              account_status: 'active'
+            })
+            .select()
+            .single(),
+          3000,
+          'profileCreate'
         )) as any;
-        
-        if (profError) {
-            throw profError;
-        }
-        
-        if (!profile) {
-            console.log("Supabase: Profile missing, attempting auto-create/backfill", user.id);
-            const { data: newProfile, error: createProfError } = (await withTimeout(
-                supabase!
-                  .from('profiles')
-                  .insert({
-                      id: user.id,
-                      email: user.email!,
-                      display_name: user.email?.split('@')[0] || 'User',
-                      subscription_type: 'trial',
-                      account_status: 'active'
-                  })
-                  .select()
-                  .single(),
-                3000,
-                "profileCreate"
-            )) as any;
-            
-            if (createProfError) {
-                console.error("Supabase: Failed to auto-create profile", createProfError);
-                throw createProfError;
-            }
-            
-            const createdUsage = await this.getOrCreateTrainerUsage(newProfile.id);
-            const createdUser = {
-                uid: newProfile.id,
-                email: newProfile.email,
-                displayName: newProfile.display_name,
-                createdAt: newProfile.created_at,
-                subscription: {
-                    type: newProfile.subscription_type || 'trial',
-                    isActive: true,
-                    usage: { weekStart: new Date().toISOString(), aiRoutinesByClient: {}, aiDietsByClient: {} }
-                },
-                trainerUsage: createdUsage
-            } as any;
-            lastFetchedUser = createdUser;
-            lastFetchTime = Date.now();
-            return createdUser;
-        }
 
-        const DEV_FORCE_PRO = false; // Solo activa manualmente en desarrollo
-        const effectiveType = DEV_FORCE_PRO ? 'pro' : (profile.subscription_type || 'trial');
-        const effectiveStatus = DEV_FORCE_PRO ? true : (profile.is_active !== false);
+        if (createProfError) throw createProfError;
+        resolvedProfile = newProfile;
+      }
 
-        const trainerUsage = await this.getOrCreateTrainerUsage(user.id);
+      const trainerUsage = await this.getOrCreateTrainerUsage(authUser.id);
+      const effectiveType = DEV_FORCE_PRO ? 'pro' : (resolvedProfile.subscription_type || 'trial');
+      const effectiveStatus = DEV_FORCE_PRO ? true : (resolvedProfile.is_active !== false);
 
-        const mappedUser = {
-          uid: profile.id,
-          email: profile.email,
-          displayName: profile.display_name || profile.email.split('@')[0],
-          createdAt: profile.created_at,
-          branding: profile.branding,
-          publicProfile: profile.public_profile,
-          subscription: {
-            type: effectiveType,
-            isActive: effectiveStatus,
-            billingInterval: profile.billing_interval,
-            status: profile.account_status || (profile.is_active ? 'active' : 'inactive'),
-            usage: { weekStart: new Date().toISOString(), aiRoutinesByClient: {}, aiDietsByClient: {} },
-            stripeCustomerId: profile.stripe_customer_id,
-            stripeSubscriptionId: profile.stripe_subscription_id,
-            currentPeriodEnd: profile.current_period_end
-          },
-          isAdmin: profile.is_admin || false,
-          trainerUsage: trainerUsage
-        } as any;
+      const mappedUser = {
+        uid: resolvedProfile.id,
+        email: resolvedProfile.email || authUser.email || '',
+        displayName: resolvedProfile.display_name || authUser.email?.split('@')[0] || 'User',
+        createdAt: resolvedProfile.created_at,
+        branding: resolvedProfile.branding,
+        publicProfile: resolvedProfile.public_profile,
+        subscription: {
+          type: effectiveType,
+          isActive: effectiveStatus,
+          billingInterval: resolvedProfile.billing_interval,
+          status: resolvedProfile.account_status || (resolvedProfile.is_active ? 'active' : 'inactive'),
+          usage: { weekStart: new Date().toISOString(), aiRoutinesByClient: {}, aiDietsByClient: {} },
+          stripeCustomerId: resolvedProfile.stripe_customer_id,
+          stripeSubscriptionId: resolvedProfile.stripe_subscription_id,
+          currentPeriodEnd: resolvedProfile.current_period_end,
+          expiresAt: resolvedProfile.current_period_end
+        },
+        isAdmin: resolvedProfile.is_admin || false,
+        trainerUsage
+      } as any;
 
-        lastFetchedUser = mappedUser;
-        lastFetchTime = Date.now();
-        return mappedUser;
+      lastFetchedUser = mappedUser;
+      lastFetchTime = Date.now();
+      return mappedUser;
     };
 
     try {
-        return await retryPromise(fetchOperation, 1, 500);
+      return await retryPromise(fetchOperation, 1, 500);
     } catch (e: any) {
-        if ((import.meta as any).env?.DEV) {
-            console.warn("Supabase: All getCurrentUser retry attempts failed:", e.message || e);
-        }
-        // Fallback: If we had a previously fetched user, return it to keep active session alive!
-        if (lastFetchedUser) {
-            if ((import.meta as any).env?.DEV) {
-                console.log("Supabase: Returning stale memory cached user profile as fallback.");
-            }
-            return lastFetchedUser;
-        }
-        
-        // Secondary fallback: Try to parse user from localStorage to safeguard on initialization
-        try {
-            const cachedUserString = localStorage.getItem('mvptrainer_cached_user');
-            if (cachedUserString) {
-                const parsed = JSON.parse(cachedUserString);
-                if (parsed && parsed.uid) {
-                    if ((import.meta as any).env?.DEV) {
-                        console.log("Supabase: Returning cached localStorage user profile as secondary fallback.");
-                    }
-                    lastFetchedUser = parsed;
-                    return parsed;
-                }
-            }
-        } catch (_) {}
-
-        if (e.message?.includes("timeout") || e.message?.includes("fetch")) {
-            return undefined as any; // special timeout indicator
-        }
-        return null;
+      if ((import.meta as any).env?.DEV) {
+        console.warn('Supabase: getCurrentUser failed.', e.message || e);
+      }
+      if (lastFetchedUser) return lastFetchedUser;
+      if (e.message?.includes('timeout') || e.message?.includes('fetch')) return undefined as any;
+      return null;
     } finally {
-        isFetchingUser = false;
+      isFetchingUser = false;
     }
   },
 
   onAuthStateChanged(callback) {
     if (!isSupabaseEnabled()) return () => {};
-    
-    const { data: { subscription } } = supabase!.auth.onAuthStateChange(async (event, session) => {
-      if ((import.meta as any).env?.DEV) {
-          console.log("AUTH LOOP FIX ACTIVE: authStateChange event triggered -", event);
-      }
-      if ((import.meta as any).env?.DEV) {
-          console.log(`[AUTH STATE CHANGE SOURCE] Event: ${event}`, session ? "Session active" : "No session");
-      }
 
+    const { data: { subscription } } = supabase!.auth.onAuthStateChange(async (event, session) => {
       const cached = localStorage.getItem('mvptrainer_cached_user');
       let parsedCachedUser: any = null;
       if (cached) {
-          try { parsedCachedUser = JSON.parse(cached); } catch(_) {}
+        try { parsedCachedUser = JSON.parse(cached); } catch (_) {}
       }
       const activeUserFallback = lastFetchedUser || parsedCachedUser;
 
       if (session?.user) {
-        // If the same user's token refreshed, we can just forward the cached profile without a new DB fetch
         if ((event as string) === 'TOKEN_REFRESHED' && activeUserFallback && activeUserFallback.uid === session.user.id) {
-            if ((import.meta as any).env?.DEV) {
-                console.log("Supabase: TOKEN_REFRESHED for active user, forwarding cached profile immediately.");
-            }
-            callback(activeUserFallback, event);
-            return;
+          callback(activeUserFallback, event);
+          return;
+        }
+        if (event === 'SIGNED_IN' && activeUserFallback && activeUserFallback.uid === session.user.id) {
+          callback(activeUserFallback, event);
+          return;
         }
 
-        // STEP 4: Bypass getCurrentUser on SIGNED_IN for a matching user reference
-        if (event === 'SIGNED_IN' && activeUserFallback && activeUserFallback.uid === session.user.id) {
-            if ((import.meta as any).env?.DEV) {
-                console.log("AUTH: using existing cached user");
-            }
-            callback(activeUserFallback, event);
-            return;
-        }
-        
         const user = await this.getCurrentUser();
         callback(user, event);
       } else {
-        // Handle null session when transient
-        if (event !== 'SIGNED_OUT' && (event as string) !== 'USER_DELETED') {
-            if (activeUserFallback) {
-                if ((import.meta as any).env?.DEV) {
-                    console.warn(`Supabase: Event ${event} reported null session with active cached user. IGNORING transient state.`);
-                }
-                callback(activeUserFallback, event);
-                return;
-            }
+        if (event !== 'SIGNED_OUT' && (event as string) !== 'USER_DELETED' && activeUserFallback) {
+          callback(activeUserFallback, event);
+          return;
         }
-        // ONLY trigger null/logout on true SIGNED_OUT or USER_DELETED events
         callback(null, event);
       }
     });
-    
+
     return () => subscription.unsubscribe();
   },
 
   async getClients(trainerId) {
-    if ((import.meta as any).env?.DEV) {
-        console.log("Supabase: getClients start for trainer", trainerId);
-    }
-    if (!trainerId || trainerId === 'undefined') {
-        if ((import.meta as any).env?.DEV) {
-            console.log("Supabase: getClients skipped, trainerId is undefined");
-        }
-        return [];
-    }
-    
-    try {
-      // Parallel fetch of clients, routines, and diets (excluding soft-deleted clients)
-      const [clientsRes, routinesRes, dietsRes] = await Promise.all([
-        supabase!
-          .from('clients')
-          .select('*')
-          .eq('trainer_id', trainerId)
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false }),
-        supabase!
-          .from('routines')
-          .select('*')
-          .eq('trainer_id', trainerId)
-          .order('created_at', { ascending: false }),
-        supabase!
-          .from('diets')
-          .select('*')
-          .eq('trainer_id', trainerId)
-          .order('created_at', { ascending: false })
-      ]);
+    if (!trainerId || trainerId === 'undefined') return [];
 
-      if (clientsRes.error) throw clientsRes.error;
+    const client = requireSupabase();
+    const [clientsRes, routinesRes, dietsRes] = await Promise.all([
+      client
+        .from('clients')
+        .select('*')
+        .eq('trainer_id', trainerId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false }),
+      client
+        .from('routines')
+        .select('*')
+        .eq('trainer_id', trainerId)
+        .order('created_at', { ascending: false }),
+      client
+        .from('diets')
+        .select('*')
+        .eq('trainer_id', trainerId)
+        .order('created_at', { ascending: false })
+    ]);
 
-      const clientsData = clientsRes.data || [];
-      const routinesData = routinesRes.data || [];
-      const dietsData = dietsRes.data || [];
+    if (clientsRes.error) throw clientsRes.error;
+    if (routinesRes.error) throw routinesRes.error;
+    if (dietsRes.error) throw dietsRes.error;
 
-      // Group routines by client_id
-      const routinesByClient: Record<string, any[]> = {};
-      routinesData.forEach((r: any) => {
-        if (!routinesByClient[r.client_id]) {
-          routinesByClient[r.client_id] = [];
-        }
-        routinesByClient[r.client_id].push({
-          ...r.content,
-          id: r.id,
-          createdAt: r.created_at
-        });
-      });
+    const routinesByClient: Record<string, any[]> = {};
+    (routinesRes.data || []).forEach((r: any) => {
+      if (!routinesByClient[r.client_id]) routinesByClient[r.client_id] = [];
+      routinesByClient[r.client_id].push({ ...r.content, id: r.id, createdAt: r.created_at });
+    });
 
-      // Group diets by client_id (one plan per client)
-      const dietByClient: Record<string, any> = {};
-      dietsData.forEach((d: any) => {
-        if (!dietByClient[d.client_id]) {
-          dietByClient[d.client_id] = {
-            ...d.content,
-            id: d.id,
-            createdAt: d.created_at
-          };
-        }
-      });
-
-      if ((import.meta as any).env?.DEV) {
-          console.log("Supabase: getClients success, count:", clientsData.length);
+    const dietByClient: Record<string, any> = {};
+    (dietsRes.data || []).forEach((d: any) => {
+      if (!dietByClient[d.client_id]) {
+        dietByClient[d.client_id] = { ...d.content, id: d.id, createdAt: d.created_at };
       }
-      return clientsData.map((c: any) => 
-        mapClientToFrontend(c, routinesByClient[c.id] || [], dietByClient[c.id] || null)
-      );
-    } catch (e) {
-      if ((import.meta as any).env?.DEV) {
-          console.error("Supabase: getClients error", e);
-      }
-      throw e;
-    }
+    });
+
+    return (clientsRes.data || []).map((c: any) =>
+      mapClientToFrontend(c, routinesByClient[c.id] || [], dietByClient[c.id] || null)
+    );
   },
 
   subscribeToClients(trainerId, callback, onStatus) {
     if (!isSupabaseEnabled()) return () => {};
     if (!trainerId || trainerId === 'undefined') return () => {};
 
-    if ((import.meta as any).env?.DEV) {
-        console.log("Supabase: subscribeToClients start (Unified Postgres Change Listener)");
-    }
-    // Initial fetch
-    this.getClients(trainerId).then(callback);
+    this.getClients(trainerId).then(callback).catch((error) => {
+      console.error('Supabase: initial clients fetch failed', error);
+      if (onStatus) onStatus('CHANNEL_ERROR');
+    });
 
-    // Realtime subscription watching clients, routines, and diets to have zero lag
     const channel = supabase!
       .channel(`unified-trainer-${trainerId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'clients',
-          filter: `trainer_id=eq.${trainerId}`
-        },
-        () => {
-          console.log("Supabase Realtime: clients change, re-fetching");
-          this.getClients(trainerId).then(callback);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'routines',
-          filter: `trainer_id=eq.${trainerId}`
-        },
-        () => {
-          console.log("Supabase Realtime: routines change, re-fetching");
-          this.getClients(trainerId).then(callback);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'diets',
-          filter: `trainer_id=eq.${trainerId}`
-        },
-        () => {
-          console.log("Supabase Realtime: diets change, re-fetching");
-          this.getClients(trainerId).then(callback);
-        }
-      );
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients', filter: `trainer_id=eq.${trainerId}` }, () => {
+        this.getClients(trainerId).then(callback);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routines', filter: `trainer_id=eq.${trainerId}` }, () => {
+        this.getClients(trainerId).then(callback);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'diets', filter: `trainer_id=eq.${trainerId}` }, () => {
+        this.getClients(trainerId).then(callback);
+      });
 
     channel.subscribe((status, err) => {
-      console.log(`REALTIME CHANNEL STATUS: ${status}`, err || '');
-      if (onStatus) {
-        onStatus(status);
-      }
+      if ((import.meta as any).env?.DEV) console.log(`REALTIME CHANNEL STATUS: ${status}`, err || '');
+      if (onStatus) onStatus(status);
     });
 
     return () => {
-      console.log("Supabase: subscribeToClients unsubscribe");
       supabase!.removeChannel(channel);
     };
   },
 
   async createClient(passedTrainerId, data) {
-    console.log("Supabase: createClient start, data received:", data);
-    
-    // Obtenemos el usuario autenticado real para evitar falsos trainerId
-    const { data: { user } } = await supabase!.auth.getUser();
-    if (!user) throw new Error("No hay sesión activa para crear cliente.");
-    
-    console.log("AUTH USER ID:", user.id);
-    const trainerId = user.id; // Forzamos el uso del ID real de la sesión
-    
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
+    const trainerId = authUser.id;
+
     const now = new Date();
     const nextMonth = new Date(now);
     nextMonth.setMonth(now.getMonth() + 1);
@@ -478,23 +317,21 @@ export const supabaseProvider: IDBProvider = {
       email: data.email,
       phone: data.phone,
       sex: data.gender,
-      birth_date: data.age 
-        ? `${new Date().getFullYear() - data.age}-01-01`
-        : null,
+      birth_date: data.age ? `${new Date().getFullYear() - data.age}-01-01` : null,
       weight_kg: data.weight,
       height_cm: data.height,
       activity_level: data.experienceLevel,
       goal: data.goals?.[0] || null,
       payment_amount: monthlyFee,
       payment_day: now.getDate(),
-      billing_frequency: "monthly",
+      billing_frequency: 'monthly',
       notes: JSON.stringify({
         payment: {
-          monthlyFee: monthlyFee,
-          status: "al_dia",
-          paymentMethod: "efectivo",
-          lastPaidAt: todayISO,
-          nextPaymentAt: nextMonthISO
+          monthlyFee,
+          status: data.paymentInfo?.status || 'sin_registro',
+          paymentMethod: data.paymentInfo?.paymentMethod || 'efectivo',
+          lastPaidAt: data.paymentInfo?.lastPaidAt || todayISO,
+          nextPaymentAt: data.paymentInfo?.nextPaymentAt || nextMonthISO
         },
         training: {
           days: data.trainingDays,
@@ -508,479 +345,335 @@ export const supabaseProvider: IDBProvider = {
       })
     };
 
-    console.log("CLIENT INSERT PAYLOAD SAFE:", insertPayload);
+    const { data: newClient, error } = await client.from('clients').insert(insertPayload).select().single();
+    if (error) throw error;
 
-    try {
-        const { data: newClient, error } = await supabase!.from('clients').insert(insertPayload).select().single();
-        if (error) throw error;
-        
-        // Incrementar contador histórico +1 al crearse con éxito
-        await this.incrementTrainerUsage(trainerId, 'clients');
-        
-        return mapClientToFrontend(newClient);
-    } catch (e) {
-        console.error("Supabase: createClient critical error", e);
-        throw e;
-    }
+    await this.incrementTrainerUsage(trainerId, 'clients');
+    return mapClientToFrontend(newClient);
   },
 
   async updateClient(clientId, data) {
-    console.log("Supabase: updateClient start", clientId, data);
-    
-    // Obtenemos el usuario para el payload y para el filtro de seguridad
-    const { data: { user } } = await supabase!.auth.getUser();
-    if (!user) throw new Error("No hay sesión activa.");
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
 
-    // Obtener datos existentes para no perder el fee u otros campos si no vienen en el payload
-    const { data: existing } = await supabase!
-        .from('clients')
-        .select('*')
-        .eq('id', clientId)
-        .eq('trainer_id', user.id)
-        .single();
+    const { data: existing, error: existingError } = await client
+      .from('clients')
+      .select('*')
+      .eq('id', clientId)
+      .eq('trainer_id', authUser.id)
+      .single();
 
-    const monthlyFee = data.paymentInfo?.monthlyFee !== undefined 
-        ? Number(data.paymentInfo.monthlyFee) 
-        : (existing?.payment_amount || 0);
+    if (existingError) throw existingError;
+
+    const existingMeta = parseNotes(existing?.notes);
+    const monthlyFee = data.paymentInfo?.monthlyFee !== undefined
+      ? Number(data.paymentInfo.monthlyFee)
+      : (existing?.payment_amount || 0);
 
     const updatePayload: any = {
-      trainer_id: user.id, // Re-afirmamos para RLS
-      full_name: data.name,
-      email: data.email,
-      phone: data.phone,
-      sex: data.gender,
-      birth_date: data.age 
-        ? `${new Date().getFullYear() - data.age}-01-01`
-        : (existing?.birth_date || null),
-      weight_kg: data.weight,
-      height_cm: data.height,
-      activity_level: data.experienceLevel,
-      goal: data.goals?.[0] || (existing?.goal || null),
+      full_name: data.name ?? existing.full_name,
+      email: data.email ?? existing.email,
+      phone: data.phone ?? existing.phone,
+      sex: data.gender ?? existing.sex,
+      birth_date: data.age ? `${new Date().getFullYear() - data.age}-01-01` : existing.birth_date,
+      weight_kg: data.weight ?? existing.weight_kg,
+      height_cm: data.height ?? existing.height_cm,
+      activity_level: data.experienceLevel ?? existing.activity_level,
+      goal: data.goals?.[0] || existing.goal,
       payment_amount: monthlyFee,
       notes: JSON.stringify({
-        payment: { ...(existing?.notes ? JSON.parse(existing.notes).payment : {}), ...(data.paymentInfo || {}) },
+        payment: { ...(existingMeta.payment || {}), ...(data.paymentInfo || {}) },
         training: {
-          days: data.trainingDays || (existing?.notes ? JSON.parse(existing.notes).training?.days : []),
-          time: data.trainingTime || (existing?.notes ? JSON.parse(existing.notes).training?.time : "")
+          days: data.trainingDays || existingMeta.training?.days || [],
+          time: data.trainingTime || existingMeta.training?.time || ''
         },
         profile: {
-          age: data.age || (existing?.notes ? JSON.parse(existing.notes).profile?.age : ""),
-          country: data.country || (existing?.notes ? JSON.parse(existing.notes).profile?.country : ""),
-          goals: data.goals || (existing?.notes ? JSON.parse(existing.notes).profile?.goals : [])
+          age: data.age ?? existingMeta.profile?.age ?? null,
+          country: data.country || existingMeta.profile?.country || '',
+          goals: data.goals || existingMeta.profile?.goals || []
         }
       })
     };
 
-    console.log("CLIENT UPDATE PAYLOAD SAFE:", updatePayload);
+    const { error } = await client
+      .from('clients')
+      .update(updatePayload)
+      .eq('id', clientId)
+      .eq('trainer_id', authUser.id)
+      .is('deleted_at', null);
 
-    try {
-        const { error } = await supabase!
-            .from('clients')
-            .update(updatePayload)
-            .eq('id', clientId)
-            .eq('trainer_id', user.id);
-        if (error) throw error;
-    } catch (e) {
-        console.error("Supabase: updateClient error", e);
-        throw e;
-    }
+    if (error) throw error;
   },
 
   async deleteClient(clientId) {
-    console.log("Supabase: deleteClient start", clientId);
-    const { data: { user } } = await supabase!.auth.getUser();
-    if (!user) {
-        console.error("Supabase: deleteClient error - No session");
-        throw new Error("No hay sesión para esta operación.");
-    }
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
 
-    console.log("Supabase: deleteClient start execution", { clientId, userId: user.id });
-
-    // Realizamos soft-delete seteando la columna `deleted_at` con la fecha y hora actuales
-    const { data, error } = await supabase!
+    const { data, error } = await client
       .from('clients')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', clientId)
-      .eq('trainer_id', user.id)
+      .eq('trainer_id', authUser.id)
+      .is('deleted_at', null)
       .select('id');
-      
-    if (error) {
-        console.error("Supabase: deleteClient error detail:", error);
-        throw error;
-    }
 
-    console.log("Supabase: deleteClient deleted rows (returned data):", data);
-
+    if (error) throw error;
     if (!data || data.length === 0) {
-        console.warn("Supabase: deleteClient - No rows were affected. This usually means the row doesn't exist or RLS blocked the deletion.");
-        throw new Error("No se eliminó ninguna fila. Posible problema de RLS (no eres el dueño) o el ID del cliente es incorrecto.");
+      throw new Error('No se eliminó ninguna fila. Revisa RLS, propiedad del cliente o si ya estaba archivado.');
     }
-
-    console.log("Supabase: deleteClient success", clientId);
   },
 
   async archiveRoutine(routineId) {
-    const { error } = await supabase!
-      .from('routines')
-      .delete()
-      .eq('id', routineId);
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
+    const { error } = await client.from('routines').delete().eq('id', routineId).eq('trainer_id', authUser.id);
     if (error) throw error;
   },
 
   async archiveDiet(dietId) {
-    const { error } = await supabase!
-        .from('diets')
-        .delete()
-        .eq('id', dietId);
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
+    const { error } = await client.from('diets').delete().eq('id', dietId).eq('trainer_id', authUser.id);
     if (error) throw error;
   },
 
   async updateUser(uid, data) {
-    const { data: profile, error } = await supabase!
-        .from('profiles')
-        .update(data)
-        .eq('id', uid)
-        .select()
-        .single();
-        
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
+    if (authUser.id !== uid) throw new Error('No puedes actualizar otro perfil.');
+
+    const dbPayload: any = { ...data };
+    if ('publicProfile' in dbPayload) {
+      dbPayload.public_profile = dbPayload.publicProfile;
+      delete dbPayload.publicProfile;
+    }
+
+    const { data: profile, error } = await client
+      .from('profiles')
+      .update(dbPayload)
+      .eq('id', uid)
+      .select()
+      .single();
+
     if (error) throw error;
     return profile;
   },
 
   async getProfile(uid) {
-    const { data, error } = await supabase!
-        .from('profiles')
-        .select('id, display_name, branding, public_profile')
-        .eq('id', uid)
-        .single();
-        
+    const client = requireSupabase();
+    const { data, error } = await client
+      .from('profiles')
+      .select('id, display_name, branding, public_profile')
+      .eq('id', uid)
+      .single();
+
     if (error || !data) return null;
     return {
-        uid: data.id,
-        displayName: data.display_name,
-        branding: data.branding,
-        publicProfile: data.public_profile
+      uid: data.id,
+      displayName: data.display_name,
+      branding: data.branding,
+      publicProfile: data.public_profile
     };
   },
 
   async saveRoutine(trainerId, clientId, routine) {
-    const { data: { user } } = await supabase!.auth.getUser();
-    if (!user) throw new Error("No hay sesión activa para guardar rutina.");
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
 
     const payload = {
       client_id: clientId,
-      trainer_id: user.id,
-      title: routine.title || routine.name || "Nueva Rutina AI",
+      trainer_id: authUser.id,
+      title: routine.title || routine.name || 'Nueva Rutina AI',
       version: 1,
-      source: routine.source || "fallback",
+      source: routine.source || 'fallback',
       content: routine,
-      notes: routine.summary || routine.description || ""
+      notes: routine.summary || routine.description || ''
     };
 
-    console.log("Routines: Saving payload (INSERT):", payload);
+    const { error } = await client.from('routines').insert(payload).select().single();
+    if (error) throw error;
 
-    const { data, error } = await supabase!
-      .from('routines')
-      .insert(payload)
-      .select()
-      .single();
-      
-    if (error) {
-        console.error("Routines: Error saving:", error);
-        throw error;
-    }
-    console.log("Routine saved success:", data);
-    
-    // Incrementar contador histórico +1 si viene de la IA
     if (routine.source === 'ai') {
-        await this.incrementTrainerUsage(user.id, 'routines');
+      await this.incrementTrainerUsage(authUser.id, 'routines');
     }
   },
 
   async saveDiet(trainerId, clientId, diet) {
+    const client = requireSupabase();
+
     if (!diet) {
-        const { error } = await supabase!.from('diets').delete().eq('client_id', clientId);
-        if (error) throw error;
-        return;
+      const authUser = await requireAuthUser();
+      const { error } = await client.from('diets').delete().eq('client_id', clientId).eq('trainer_id', authUser.id);
+      if (error) throw error;
+      return;
     }
 
-    const { data: { user } } = await supabase!.auth.getUser();
-    if (!user) throw new Error("No hay sesión activa para guardar dieta.");
-
+    const authUser = await requireAuthUser();
     const payload = {
       client_id: clientId,
-      trainer_id: user.id,
-      title: diet.title || "Plan Nutricional AI",
+      trainer_id: authUser.id,
+      title: diet.title || 'Plan Nutricional AI',
       version: 1,
-      source: diet.source || "fallback",
+      source: diet.source || 'fallback',
       content: diet,
-      notes: diet.summary || diet.notes || ""
+      notes: diet.summary || diet.notes || ''
     };
 
-    console.log("Diets: Saving payload (INSERT):", payload);
+    const { error } = await client.from('diets').insert(payload).select().single();
+    if (error) throw error;
 
-    const { data, error } = await supabase!
-      .from('diets')
-      .insert(payload)
-      .select()
-      .single();
-      
-    if (error) {
-        console.error("Diets: Error saving:", error);
-        throw error;
-    }
-    console.log("Diet saved success:", data);
-    
-    // Incrementar contador histórico +1 si viene de la IA
     if (diet.source === 'ai') {
-        await this.incrementTrainerUsage(user.id, 'diets');
+      await this.incrementTrainerUsage(authUser.id, 'diets');
     }
   },
 
   async getRoutines(clientId) {
-    const { data, error } = await supabase!
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
+    const { data, error } = await client
       .from('routines')
       .select('*')
       .eq('client_id', clientId)
+      .eq('trainer_id', authUser.id)
       .order('created_at', { ascending: false });
-    
+
     if (error) return [];
-    return data.map((r: any) => ({
-        ...r.content,
-        id: r.id,
-        createdAt: r.created_at
-    }));
+    return data.map((r: any) => ({ ...r.content, id: r.id, createdAt: r.created_at }));
   },
 
   async getDiet(clientId) {
-    const { data, error } = await supabase!
+    const client = requireSupabase();
+    const authUser = await requireAuthUser();
+    const { data, error } = await client
       .from('diets')
       .select('*')
       .eq('client_id', clientId)
+      .eq('trainer_id', authUser.id)
       .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
-    
+
     if (error || !data) return null;
-    return {
-        ...data.content,
-        id: data.id,
-        createdAt: data.created_at
-    };
+    return { ...data.content, id: data.id, createdAt: data.created_at };
   },
 
   async getOrCreateTrainerUsage(trainerId) {
-    if (!isSupabaseEnabled()) {
-        return {
-            trainer_id: trainerId,
-            clients_created_total: 0,
-            ai_routines_generated_total: 0,
-            ai_diets_generated_total: 0
-        };
+    const client = requireSupabase();
+
+    const [clientCountRes, routineCountRes, dietCountRes] = await Promise.all([
+      client.from('clients').select('*', { count: 'exact', head: true }).eq('trainer_id', trainerId),
+      client.from('routines').select('*', { count: 'exact', head: true }).eq('trainer_id', trainerId).eq('source', 'ai'),
+      client.from('diets').select('*', { count: 'exact', head: true }).eq('trainer_id', trainerId).eq('source', 'ai')
+    ]);
+
+    if (clientCountRes.error) throw clientCountRes.error;
+    if (routineCountRes.error) throw routineCountRes.error;
+    if (dietCountRes.error) throw dietCountRes.error;
+
+    const currentTotals = {
+      clients_created_total: clientCountRes.count || 0,
+      ai_routines_generated_total: routineCountRes.count || 0,
+      ai_diets_generated_total: dietCountRes.count || 0
+    };
+
+    const { data, error } = await client
+      .from('trainer_usage')
+      .select('*')
+      .eq('trainer_id', trainerId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      const backfilled = {
+        clients_created_total: Math.max(data.clients_created_total || 0, currentTotals.clients_created_total),
+        ai_routines_generated_total: Math.max(data.ai_routines_generated_total || 0, currentTotals.ai_routines_generated_total),
+        ai_diets_generated_total: Math.max(data.ai_diets_generated_total || 0, currentTotals.ai_diets_generated_total)
+      };
+
+      const needsBackfill =
+        backfilled.clients_created_total !== data.clients_created_total ||
+        backfilled.ai_routines_generated_total !== data.ai_routines_generated_total ||
+        backfilled.ai_diets_generated_total !== data.ai_diets_generated_total;
+
+      if (!needsBackfill) return data;
+
+      const { data: updatedData, error: updateErr } = await client
+        .from('trainer_usage')
+        .update({ ...backfilled, updated_at: new Date().toISOString() })
+        .eq('trainer_id', trainerId)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+      return updatedData;
     }
-    
-    // Obtener total real histórico de clientes en DB para propósitos de Backfill
-    let currentTotalCount = 0;
-    try {
-        const { count, error: countErr } = await supabase!
-            .from('clients')
-            .select('*', { count: 'exact', head: true })
-            .eq('trainer_id', trainerId);
-            
-        if (!countErr && count !== null) {
-            currentTotalCount = count;
-        }
-    } catch (err) {
-        console.warn("Supabase backfill client count query failed:", err);
-    }
-    
-    try {
-        const { data, error } = await supabase!
-            .from('trainer_usage')
-            .select('*')
-            .eq('trainer_id', trainerId)
-            .maybeSingle();
-            
-        if (error) {
-            throw error;
-        }
-        
-        if (data) {
-            // BACKFILL: Si el conteo real en DB es mayor al registrado, actualizamos la tabla para sincronizar
-            if (currentTotalCount > (data.clients_created_total || 0)) {
-                console.log(`[BACKFILL] Sincronizando trainer_usage. DB count: ${currentTotalCount}, actual: ${data.clients_created_total}`);
-                const { data: updatedData, error: updateErr } = await supabase!
-                    .from('trainer_usage')
-                    .update({ clients_created_total: currentTotalCount, updated_at: new Date().toISOString() })
-                    .eq('trainer_id', trainerId)
-                    .select()
-                    .single();
-                if (!updateErr && updatedData) {
-                    return updatedData;
-                }
-            }
-            return data;
-        }
-        
-        // No existe: crearlo sincronizado con el conteo de clientes real
-        const { data: newUsage, error: insertError } = await supabase!
-            .from('trainer_usage')
-            .insert({
-                trainer_id: trainerId,
-                clients_created_total: currentTotalCount,
-                ai_routines_generated_total: 0,
-                ai_diets_generated_total: 0
-            })
-            .select()
-            .single();
-            
-        if (insertError) {
-            throw insertError;
-        }
-        return newUsage;
-    } catch (e: any) {
-        if ((import.meta as any).env?.DEV) {
-            console.warn("Supabase: Error reading/creating trainer_usage. Using local fallback.", e);
-        }
-        // Fallback robusto usando localStorage para no colapsar la app en pre-producción o antes de migrar SQL
-        const localKey = `mvptrainer_usage_fallback_${trainerId}`;
-        const cached = localStorage.getItem(localKey);
-        if (cached) {
-            try { return JSON.parse(cached); } catch { /* ignore */ }
-        }
-        const fallbackObj = {
-            trainer_id: trainerId,
-            clients_created_total: Math.max(0, currentTotalCount),
-            ai_routines_generated_total: 0,
-            ai_diets_generated_total: 0
-        };
-        localStorage.setItem(localKey, JSON.stringify(fallbackObj));
-        return fallbackObj;
-    }
+
+    const { data: newUsage, error: insertError } = await client
+      .from('trainer_usage')
+      .insert({ trainer_id: trainerId, ...currentTotals })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+    return newUsage;
   },
 
   async incrementTrainerUsage(trainerId, type) {
+    const client = requireSupabase();
     const current = await this.getOrCreateTrainerUsage(trainerId);
-    
-    // Incremos locales
+
     const increments: any = {};
     if (type === 'clients') {
-        increments.clients_created_total = (current.clients_created_total || 0) + 1;
+      increments.clients_created_total = (current.clients_created_total || 0) + 1;
     } else if (type === 'routines') {
-        increments.ai_routines_generated_total = (current.ai_routines_generated_total || 0) + 1;
+      increments.ai_routines_generated_total = (current.ai_routines_generated_total || 0) + 1;
     } else if (type === 'diets') {
-        increments.ai_diets_generated_total = (current.ai_diets_generated_total || 0) + 1;
+      increments.ai_diets_generated_total = (current.ai_diets_generated_total || 0) + 1;
     }
-    
+
     increments.updated_at = new Date().toISOString();
-    
-    if (!isSupabaseEnabled()) {
-        return { ...current, ...increments };
+
+    const { data, error } = await client
+      .from('trainer_usage')
+      .update(increments)
+      .eq('trainer_id', trainerId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (lastFetchedUser && lastFetchedUser.uid === trainerId) {
+      lastFetchedUser.trainerUsage = data;
     }
-    
-    try {
-        const { data, error } = await supabase!
-            .from('trainer_usage')
-            .update(increments)
-            .eq('trainer_id', trainerId)
-            .select()
-            .single();
-            
-        if (error) {
-            // Intentar con insert si por alguna razón falla el update
-            const { data: inserted, error: upsertError } = await supabase!
-                .from('trainer_usage')
-                .upsert({
-                    trainer_id: trainerId,
-                    clients_created_total: increments.clients_created_total ?? current.clients_created_total ?? 0,
-                    ai_routines_generated_total: increments.ai_routines_generated_total ?? current.ai_routines_generated_total ?? 0,
-                    ai_diets_generated_total: increments.ai_diets_generated_total ?? current.ai_diets_generated_total ?? 0,
-                    updated_at: increments.updated_at
-                })
-                .select()
-                .single();
-            if (upsertError) throw upsertError;
-            
-            if (lastFetchedUser && lastFetchedUser.uid === trainerId) {
-                lastFetchedUser.trainerUsage = inserted;
-            }
-            return inserted;
-        }
-        
-        // Cachear en lastFetchedUser si aplica
-        if (lastFetchedUser && lastFetchedUser.uid === trainerId) {
-            lastFetchedUser.trainerUsage = data;
-        }
-        
-        // Sincronizar local storage
-        const localKey = `mvptrainer_usage_fallback_${trainerId}`;
-        localStorage.setItem(localKey, JSON.stringify(data));
-        
-        return data;
-    } catch (e: any) {
-        if ((import.meta as any).env?.DEV) {
-            console.warn("Supabase: Error updating trainer_usage. Using local fallback updates.", e);
-        }
-        const updatedFallback = { ...current, ...increments };
-        const localKey = `mvptrainer_usage_fallback_${trainerId}`;
-        localStorage.setItem(localKey, JSON.stringify(updatedFallback));
-        
-        if (lastFetchedUser && lastFetchedUser.uid === trainerId) {
-            lastFetchedUser.trainerUsage = updatedFallback;
-        }
-        return updatedFallback;
-    }
+
+    return data;
   },
 
   async getTotalRoutinesCount(trainerId) {
-    if (!isSupabaseEnabled()) return 0;
-    try {
-        const { count, error } = await supabase!
-            .from('routines')
-            .select('*', { count: 'exact', head: true })
-            .eq('trainer_id', trainerId);
-        if (error) {
-            console.error("Supabase error fetching total routines count:", error);
-            return 0;
-        }
-        return count || 0;
-    } catch (e: any) {
-        console.error("Error getting total routines count:", e);
-        return 0;
-    }
+    const client = requireSupabase();
+    const { count, error } = await client
+      .from('routines')
+      .select('*', { count: 'exact', head: true })
+      .eq('trainer_id', trainerId);
+    if (error) throw error;
+    return count || 0;
   },
 
   async getTotalDietsCount(trainerId) {
-    if (!isSupabaseEnabled()) return 0;
-    try {
-        const { count, error } = await supabase!
-            .from('diets')
-            .select('*', { count: 'exact', head: true })
-            .eq('trainer_id', trainerId);
-        if (error) {
-            console.error("Supabase error fetching total diets count:", error);
-            return 0;
-        }
-        return count || 0;
-    } catch (e: any) {
-        console.error("Error getting total diets count:", e);
-        return 0;
-    }
+    const client = requireSupabase();
+    const { count, error } = await client
+      .from('diets')
+      .select('*', { count: 'exact', head: true })
+      .eq('trainer_id', trainerId);
+    if (error) throw error;
+    return count || 0;
   }
 };
 
-// Helper interno para mapear cliente uniformemente
 const mapClientToFrontend = (c: any, routines: any[] = [], dietPlan: any = null) => {
   if (!c) return null;
-  let meta: any = {};
-  try {
-    if (c.notes && (c.notes.startsWith('{') || c.notes.startsWith('['))) {
-      meta = JSON.parse(c.notes);
-    }
-  } catch (e) {
-    meta = {};
-  }
-  
-  // Soporte para nueva estructura: meta.payment, meta.training, meta.profile
+  const meta = parseNotes(c.notes);
   const payment = meta.payment || meta.payment_info || {};
   const training = meta.training || {};
   const profile = meta.profile || {};
