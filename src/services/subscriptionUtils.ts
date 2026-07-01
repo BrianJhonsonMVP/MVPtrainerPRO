@@ -1,10 +1,9 @@
-
 import { User } from '../types';
 
 export const LIMITS = {
   FREE_CLIENTS: 2,
-  FREE_ROUTINES_WEEKLY: 1,
-  FREE_DIETS_WEEKLY: 1,
+  FREE_AI_ROUTINES_HISTORICAL: 2,
+  FREE_AI_DIETS_HISTORICAL: 2,
   TRIAL_DAYS: 15
 };
 
@@ -17,7 +16,7 @@ export interface PlanStatus {
 
 export const getPlanStatusLabel = (user: User | null): PlanStatus => {
   if (!user) return { label: 'Sin sesión', color: 'text-zinc-500', detail: 'Inicia sesión para ver tu plan', bg: 'bg-zinc-900' };
-  
+
   const type = user?.subscription?.type || 'free';
   const isActive = user?.subscription?.isActive;
 
@@ -29,12 +28,12 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
       bg: isActive ? 'bg-mvp-gold/10' : 'bg-zinc-900'
     };
   }
-  
+
   if (type === 'trial') {
     return {
       label: 'Prueba Gratuita',
       color: 'text-amber-500',
-      detail: 'Disfrutando de funciones PRO temporales',
+      detail: 'Límites Free activos hasta pasar a PRO',
       bg: 'bg-amber-500/10'
     };
   }
@@ -42,7 +41,7 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
   return {
     label: 'Plan Free',
     color: 'text-zinc-400',
-    detail: 'Límites básicos activos',
+    detail: 'Límites históricos activos',
     bg: 'bg-zinc-900'
   };
 };
@@ -55,7 +54,6 @@ export const clearStaleUserCache = (trainerId?: string) => {
   if (trainerId) {
     localStorage.removeItem(`mvptrainer_usage_fallback_${trainerId}`);
   } else {
-    // Barrido completo de claves que inicien con el prefijo de fallback de soporte offline
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
