@@ -6,7 +6,7 @@ import {
   Users, Activity, Dumbbell, Crown, ChevronRight, Menu, X, 
   Sparkles, Loader2, AlertCircle, DollarSign, 
   Edit2, Save, User as UserIcon, Clock, Trash2, Banknote, 
-  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink
+  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square
 } from 'lucide-react';
 import { BillingRecord, Client, Routine, User as AppUser, DietPlan, ClientPaymentInfo, PlanInterval, UserSubscription } from './types';
 import { generateWorkoutRoutine, generateDietPlan, getLastGeminiErrorMessage } from './services/geminiService';
@@ -698,8 +698,8 @@ const FORM_COPY = {
         medical: 'Condición médica, lesión o limitación a considerar',
         medicalPlaceholder: 'Ej: dolor de rodilla, diabetes, alergias, presión alta, ninguna.',
         goals: 'Objetivos *',
-        dictate: 'Dictar datos del cliente',
-        recording: 'Grabando...',
+        dictate: 'Rellenar cliente por voz',
+        recording: 'Escuchando sin límite',
         processingVoice: 'Procesando voz...',
         voiceHint: 'Habla de forma natural: nombre, edad, peso, objetivo, agenda, pago y restricciones. Lo que falte puedes completarlo manualmente.',
         primaryGoal: 'Objetivo principal *',
@@ -717,14 +717,16 @@ const FORM_COPY = {
         end: 'Fin',
         paymentPlan: 'Plan de Pago *',
         monthlyFee: 'Mensualidad *',
-        voiceTitle: 'Dictado del cliente',
-        voiceDescription: 'No se guarda audio. El texto final se usará para rellenar el formulario.',
-        voiceActive: 'Grabando audio. Di todos los datos del cliente y pulsa Detener.',
+        voiceTitle: 'Rellenar cliente por voz',
+        voiceDescription: 'Describe al cliente con naturalidad. El audio no se guarda y podrás revisar el texto antes de aplicarlo.',
+        voiceActive: 'Escuchando. Puedes hablar con calma; continuará hasta que pulses Detener dictado.',
         voiceOrganizing: 'Transcribiendo y ordenando datos...',
+        voiceReview: 'Revisa y aplica los datos',
+        voiceLive: 'En vivo',
         transcriptPlaceholder: 'La transcripción aparecerá aquí. Puedes editarla antes de aplicar.',
         apply: 'Aplicar',
-        stop: 'Detener',
-        recordAgain: 'Volver a grabar',
+        stop: 'Detener dictado',
+        recordAgain: 'Volver a dictar',
         cancel: 'Cancelar',
         saveChanges: 'Guardar Cambios',
         createClient: 'Crear Cliente',
@@ -751,8 +753,8 @@ const FORM_COPY = {
         medical: 'Medical condition, injury or limitation to consider',
         medicalPlaceholder: 'Example: knee pain, diabetes, allergies, high blood pressure, none.',
         goals: 'Goals *',
-        dictate: 'Dictate client data',
-        recording: 'Recording...',
+        dictate: 'Fill client by voice',
+        recording: 'Listening without a time limit',
         processingVoice: 'Processing voice...',
         voiceHint: 'Speak naturally: name, age, weight, goal, schedule, payment and restrictions. Anything missing can be completed manually.',
         primaryGoal: 'Main goal *',
@@ -770,14 +772,16 @@ const FORM_COPY = {
         end: 'End',
         paymentPlan: 'Payment plan *',
         monthlyFee: 'Monthly fee *',
-        voiceTitle: 'Client dictation',
-        voiceDescription: 'Audio is not saved. The final text will be used to fill the form.',
-        voiceActive: 'Recording audio. Say all client data and press Stop.',
+        voiceTitle: 'Fill client by voice',
+        voiceDescription: 'Describe the client naturally. Audio is not saved, and you can review the text before applying it.',
+        voiceActive: 'Listening. Take your time; dictation continues until you press Stop dictation.',
         voiceOrganizing: 'Transcribing and organizing data...',
+        voiceReview: 'Review and apply the data',
+        voiceLive: 'Live',
         transcriptPlaceholder: 'The transcript will appear here. You can edit it before applying.',
         apply: 'Apply',
-        stop: 'Stop',
-        recordAgain: 'Record again',
+        stop: 'Stop dictation',
+        recordAgain: 'Dictate again',
         cancel: 'Cancel',
         saveChanges: 'Save Changes',
         createClient: 'Create Client',
@@ -3475,12 +3479,15 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
     const [voiceTranscript, setVoiceTranscript] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isOrganizingVoice, setIsOrganizingVoice] = useState(false);
+    const [voiceElapsedSeconds, setVoiceElapsedSeconds] = useState(0);
     const [voiceError, setVoiceError] = useState('');
     const voiceRecorderRef = useRef<MediaRecorder | null>(null);
     const voiceRecognitionRef = useRef<any>(null);
     const voiceStreamRef = useRef<MediaStream | null>(null);
     const voiceChunksRef = useRef<Blob[]>([]);
-    const voiceStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const voiceShouldListenRef = useRef(false);
+    const voiceRecognitionRestartRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const voiceFinalTranscriptRef = useRef('');
 
     useEffect(() => {
         if (initialData) {
@@ -3508,6 +3515,12 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
             });
         }
     }, [initialData]);
+
+    useEffect(() => {
+        if (!isListening) return;
+        const interval = setInterval(() => setVoiceElapsedSeconds(seconds => seconds + 1), 1000);
+        return () => clearInterval(interval);
+    }, [isListening]);
 
     const PRIMARY_GOALS = [
         "Bajar grasa", "Ganar masa muscular", "Recomposicion corporal",
@@ -3549,9 +3562,12 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
     const stopVoiceStream = () => {
         voiceStreamRef.current?.getTracks().forEach(track => track.stop());
         voiceStreamRef.current = null;
-        if (voiceStopTimeoutRef.current) {
-            clearTimeout(voiceStopTimeoutRef.current);
-            voiceStopTimeoutRef.current = null;
+    };
+
+    const clearVoiceRecognitionRestart = () => {
+        if (voiceRecognitionRestartRef.current) {
+            clearTimeout(voiceRecognitionRestartRef.current);
+            voiceRecognitionRestartRef.current = null;
         }
     };
 
@@ -3607,6 +3623,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
     const startBrowserSpeechRecognition = () => {
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (!SpeechRecognition) {
+            voiceShouldListenRef.current = false;
             const message = language === 'en' ? "Your browser does not support voice recording. You can type the client details manually." : "Tu navegador no permite grabacion por voz. Puedes escribir los objetivos manualmente.";
             setVoiceError(message);
             onShowToast({ title: language === 'en' ? "Voice unavailable" : "Voz no disponible", message, type: 'warning' });
@@ -3615,31 +3632,69 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
 
         const recognition = new SpeechRecognition();
         recognition.lang = language === 'en' ? 'en-US' : 'es-PE';
-        recognition.interimResults = false;
-        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.continuous = true;
         voiceRecognitionRef.current = recognition;
+        voiceShouldListenRef.current = true;
+        voiceFinalTranscriptRef.current = '';
         setVoiceError('');
         setIsListening(true);
         setVoiceModalOpen(true);
 
         recognition.onresult = (event: any) => {
-            const transcript = Array.from(event.results || [])
-                .map((result: any) => result?.[0]?.transcript || '')
-                .join(' ')
-                .trim();
-            setVoiceTranscript(transcript);
+            let interimTranscript = '';
+            for (let index = event.resultIndex || 0; index < (event.results?.length || 0); index += 1) {
+                const result = event.results[index];
+                const text = String(result?.[0]?.transcript || '').trim();
+                if (!text) continue;
+                if (result.isFinal) {
+                    voiceFinalTranscriptRef.current = `${voiceFinalTranscriptRef.current} ${text}`.trim();
+                } else {
+                    interimTranscript = `${interimTranscript} ${text}`.trim();
+                }
+            }
+            setVoiceTranscript(`${voiceFinalTranscriptRef.current} ${interimTranscript}`.trim());
         };
         recognition.onerror = (event: any) => {
-            const reason = event?.error ? ` (${event.error})` : "";
+            const errorCode = String(event?.error || '');
+            if (errorCode === 'aborted' || errorCode === 'no-speech') return;
+            const fatalError = ['not-allowed', 'service-not-allowed', 'audio-capture'].includes(errorCode);
+            if (fatalError) {
+                voiceShouldListenRef.current = false;
+                clearVoiceRecognitionRestart();
+                setIsListening(false);
+            }
+            const reason = errorCode ? ` (${errorCode})` : "";
             const message = language === 'en' ? `Could not transcribe the voice${reason}. Try again or type the details manually.` : `No se pudo transcribir la voz${reason}. Intenta otra vez o escribe los objetivos manualmente.`;
             setVoiceError(message);
             onShowToast({ title: language === 'en' ? "Voice error" : "Error de voz", message, type: 'warning' });
         };
         recognition.onend = () => {
+            if (voiceShouldListenRef.current) {
+                clearVoiceRecognitionRestart();
+                voiceRecognitionRestartRef.current = setTimeout(() => {
+                    if (!voiceShouldListenRef.current || voiceRecognitionRef.current !== recognition) return;
+                    try {
+                        recognition.start();
+                    } catch {
+                        voiceShouldListenRef.current = false;
+                        setIsListening(false);
+                        voiceRecognitionRef.current = null;
+                    }
+                }, 250);
+                return;
+            }
+            clearVoiceRecognitionRestart();
             setIsListening(false);
             voiceRecognitionRef.current = null;
         };
-        recognition.start();
+        try {
+            recognition.start();
+        } catch {
+            voiceShouldListenRef.current = false;
+            setIsListening(false);
+            voiceRecognitionRef.current = null;
+        }
     };
 
     const startVoiceCapture = async () => {
@@ -3648,6 +3703,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
         setVoiceModalOpen(true);
         setVoiceTranscript('');
         setVoiceError('');
+        setVoiceElapsedSeconds(0);
+        voiceShouldListenRef.current = true;
 
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
             startBrowserSpeechRecognition();
@@ -3676,6 +3733,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
             };
 
             recorder.onerror = () => {
+                voiceShouldListenRef.current = false;
                 const message = language === 'en' ? "Could not record audio. Check microphone permission or type it manually." : "No se pudo grabar el audio. Revisa el permiso del microfono o intenta escribirlo manualmente.";
                 setVoiceError(message);
                 onShowToast({ title: language === 'en' ? "Voice error" : "Error de voz", message, type: 'warning' });
@@ -3684,20 +3742,17 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
             recorder.onstop = async () => {
                 const type = recorder.mimeType || mimeType || 'audio/webm';
                 const audioBlob = new Blob(voiceChunksRef.current, { type });
+                voiceShouldListenRef.current = false;
                 voiceRecorderRef.current = null;
                 stopVoiceStream();
                 setIsListening(false);
                 await transcribeVoiceBlob(audioBlob);
             };
 
-            recorder.start();
+            recorder.start(1000);
             setIsListening(true);
-            voiceStopTimeoutRef.current = setTimeout(() => {
-                if (voiceRecorderRef.current?.state === 'recording') {
-                    voiceRecorderRef.current.stop();
-                }
-            }, 45000);
         } catch (error: any) {
+            voiceShouldListenRef.current = false;
             stopVoiceStream();
             setIsListening(false);
             const denied = error?.name === 'NotAllowedError' || error?.name === 'SecurityError';
@@ -3710,6 +3765,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
     };
 
     const stopVoiceCapture = () => {
+        voiceShouldListenRef.current = false;
+        clearVoiceRecognitionRestart();
         if (voiceRecorderRef.current?.state === 'recording') {
             voiceRecorderRef.current.stop();
             return;
@@ -3719,7 +3776,11 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
         }
     };
 
+    const voiceElapsedLabel = `${String(Math.floor(voiceElapsedSeconds / 60)).padStart(2, '0')}:${String(voiceElapsedSeconds % 60).padStart(2, '0')}`;
+
     const closeVoiceModal = () => {
+        voiceShouldListenRef.current = false;
+        clearVoiceRecognitionRestart();
         if (voiceRecorderRef.current?.state === 'recording') {
             voiceRecorderRef.current.onstop = null;
             voiceRecorderRef.current.stop();
@@ -4199,17 +4260,83 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                     {/* Section: Objetivos */}
                     <div className="space-y-4" id="error-container-goals">
                          <h4 className="text-xs font-bold text-mvp-gold uppercase tracking-wider">{formCopy.goals}</h4>
-                         <AppButton
-                            type="button"
-                            onClick={startVoiceCapture}
-                            disabled={isListening || isOrganizingVoice}
-                            variant="secondary"
-                            className="w-full"
-                            icon={(isListening || isOrganizingVoice) ? <Loader2 className="animate-spin" size={16} /> : <MessageSquare size={16} />}
-                         >
-                            {isListening ? formCopy.recording : isOrganizingVoice ? formCopy.processingVoice : formCopy.dictate}
-                         </AppButton>
-                         <p className="text-xs text-zinc-500 leading-relaxed">{formCopy.voiceHint}</p>
+                         <div className={`voice-fill-card ${isListening ? 'is-listening' : ''} ${isOrganizingVoice ? 'is-processing' : ''}`}>
+                            <div className="voice-fill-header">
+                                <span className="voice-fill-icon" aria-hidden="true">
+                                    {isOrganizingVoice ? <Loader2 className="animate-spin" size={20} /> : <Mic size={20} />}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h5>{formCopy.voiceTitle}</h5>
+                                        {isListening && (
+                                            <span className="voice-live-badge">
+                                                <span />
+                                                {formCopy.voiceLive}
+                                                <time>{voiceElapsedLabel}</time>
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p>{formCopy.voiceDescription}</p>
+                                </div>
+                            </div>
+
+                            <AppButton
+                                type="button"
+                                onClick={isListening ? stopVoiceCapture : startVoiceCapture}
+                                disabled={isOrganizingVoice}
+                                variant={isListening ? 'danger' : 'secondary'}
+                                className={`voice-capture-button w-full ${isListening ? 'is-active' : ''}`}
+                                icon={isOrganizingVoice ? <Loader2 className="animate-spin" size={17} /> : isListening ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}
+                            >
+                                {isListening ? formCopy.stop : isOrganizingVoice ? formCopy.processingVoice : formCopy.dictate}
+                            </AppButton>
+                            <p className="voice-fill-hint">{formCopy.voiceHint}</p>
+
+                            <AnimatePresence initial={false}>
+                                {voiceModalOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0, y: -6 }}
+                                        animate={{ opacity: 1, height: 'auto', y: 0 }}
+                                        exit={{ opacity: 0, height: 0, y: -6 }}
+                                        transition={{ duration: 0.22, ease: MOTION_EASE }}
+                                        className="voice-capture-panel"
+                                    >
+                                        <div className={`voice-status-row ${isListening ? 'is-live' : ''}`}>
+                                            <span className="voice-status-dot" />
+                                            <span>{isListening ? formCopy.voiceActive : isOrganizingVoice ? formCopy.voiceOrganizing : formCopy.voiceReview}</span>
+                                            {!isListening && !isOrganizingVoice && (
+                                                <button type="button" onClick={closeVoiceModal} className="voice-panel-close" aria-label={formCopy.cancel}>
+                                                    <X size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        {voiceError && <p className="voice-error-message">{voiceError}</p>}
+                                        <textarea
+                                            value={voiceTranscript}
+                                            onChange={e => setVoiceTranscript(e.target.value)}
+                                            readOnly={isListening || isOrganizingVoice}
+                                            className="voice-transcript"
+                                            placeholder={isListening ? formCopy.recording : isOrganizingVoice ? formCopy.voiceOrganizing : formCopy.transcriptPlaceholder}
+                                        />
+                                        <div className="voice-panel-actions">
+                                            <AppButton
+                                                type="button"
+                                                onClick={applyVoiceTranscript}
+                                                disabled={isOrganizingVoice || isListening}
+                                                variant="primary"
+                                                className="w-full"
+                                                icon={isOrganizingVoice ? <Loader2 className="animate-spin" size={14} /> : <Check size={15} />}
+                                            >
+                                                {formCopy.apply}
+                                            </AppButton>
+                                            <AppButton type="button" onClick={closeVoiceModal} disabled={isListening || isOrganizingVoice} variant="tertiary" className="w-full">
+                                                {formCopy.cancel}
+                                            </AppButton>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                         </div>
                          {errors.goals && <p className="text-red-500 text-xs font-semibold">{errors.goals}</p>}
                          <div>
                             <label className="text-[10px] text-zinc-500 font-bold mb-2 block">{formCopy.primaryGoal}</label>
@@ -4420,53 +4547,9 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                     </div>
                 </form>
 
-                {voiceModalOpen && (
-                    <div className="px-6 pb-4">
-                        <div className="bg-black border border-mvp-gold/40 rounded-2xl p-4 space-y-3 shadow-xl">
-                            <div className="flex items-start justify-between gap-3">
-                                <div>
-                                    <h4 className="text-white font-bold text-sm">{formCopy.voiceTitle}</h4>
-                                    <p className="text-xs text-zinc-500 mt-1">{formCopy.voiceDescription}</p>
-                                </div>
-                                <button type="button" onClick={closeVoiceModal} className="text-zinc-500 hover:text-white"><X size={18} /></button>
-                            </div>
-                            {(isListening || isOrganizingVoice) && (
-                                <p className="text-xs text-mvp-gold bg-mvp-gold/10 border border-mvp-gold/20 rounded-lg p-2">
-                                    {isListening ? formCopy.voiceActive : formCopy.voiceOrganizing}
-                                </p>
-                            )}
-                            {voiceError && <p className="text-xs text-amber-300 bg-amber-950/20 border border-amber-500/20 rounded-lg p-2">{voiceError}</p>}
-                            <textarea
-                                value={voiceTranscript}
-                                onChange={e => setVoiceTranscript(e.target.value)}
-                                className="w-full min-h-[120px] bg-zinc-950 border border-zinc-700 text-white rounded-xl px-3 py-3 outline-none focus:border-mvp-gold resize-none text-sm"
-                                placeholder={isListening ? formCopy.recording : isOrganizingVoice ? formCopy.voiceOrganizing : formCopy.transcriptPlaceholder}
-                            />
-                            <div className="grid grid-cols-3 gap-2">
-                                <AppButton
-                                    type="button"
-                                    onClick={applyVoiceTranscript}
-                                    disabled={isOrganizingVoice || isListening}
-                                    variant="primary"
-                                    className="col-span-3 sm:col-span-1 w-full"
-                                    icon={isOrganizingVoice ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
-                                >
-                                    {formCopy.apply}
-                                </AppButton>
-                                <AppButton type="button" onClick={isListening ? stopVoiceCapture : startVoiceCapture} disabled={isOrganizingVoice} variant="secondary" className="w-full">
-                                    {isListening ? formCopy.stop : formCopy.recordAgain}
-                                </AppButton>
-                                <AppButton type="button" onClick={closeVoiceModal} variant="tertiary" className="w-full">
-                                    {formCopy.cancel}
-                                </AppButton>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
                 <div className="px-4 py-4 sm:px-6 border-t border-zinc-800 grid grid-cols-2 gap-3 bg-zinc-900 sm:rounded-b-2xl shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
                     <AppButton type="button" onClick={onClose} variant="secondary" className="w-full">{formCopy.cancel}</AppButton>
-                    <AppButton type="button" onClick={handleSubmit} variant="primary" className="w-full">
+                    <AppButton type="button" onClick={handleSubmit} disabled={isListening || isOrganizingVoice} variant="primary" className="w-full">
                         {initialData ? formCopy.saveChanges : formCopy.createClient}
                     </AppButton>
                 </div>
