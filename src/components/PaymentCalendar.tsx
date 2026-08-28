@@ -217,10 +217,10 @@ const PaymentCalendar: React.FC<Props> = ({
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-1 pb-24 sm:px-3">
-      <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="module-page payment-page mx-auto w-full max-w-5xl px-1 pb-24 sm:px-3">
+      <header className="module-page-header mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300">
+          <div className="module-title-icon payment-title-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300">
             <CircleDollarSign size={22} />
           </div>
           <div>
@@ -243,7 +243,7 @@ const PaymentCalendar: React.FC<Props> = ({
 
       <PaymentSummary summary={summary} clients={clients} language={activeLanguage} />
 
-      <div className="my-5 flex gap-2 overflow-x-auto pb-1">
+      <div className="module-filter-bar my-5 flex gap-2 overflow-x-auto pb-1">
         {(['all', 'pending', 'overdue', 'paid'] as const).map(option => (
           <button
             key={option}
@@ -304,8 +304,8 @@ const PaymentCalendar: React.FC<Props> = ({
 
       <section className="space-y-3 lg:hidden">
         {filteredEvents.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center">
-            <Banknote size={26} className="mx-auto text-zinc-700" />
+          <div className="guided-empty-state rounded-2xl border border-dashed border-zinc-800 p-8 text-center">
+            <span className="guided-empty-icon"><Banknote size={26} /></span>
             <p className="mt-3 text-sm font-bold text-zinc-500">{copy.noMonth}</p>
           </div>
         ) : (

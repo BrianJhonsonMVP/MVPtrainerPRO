@@ -17,7 +17,6 @@ import {
   canUseFeature,
   isActivePro,
   registerUsage,
-  shouldShowUpgradeBanner,
   normalizeSubscription,
   resetWeeklyUsageIfNeeded
 } from './services/subscriptionLogic';
@@ -68,6 +67,19 @@ const MVPBrandLogo = ({ className = '' }: { className?: string }) => (
         className={`mvp-brand-logo object-contain select-none ${className}`}
         draggable={false}
     />
+);
+
+const GoogleMark = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+    <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.41Z" />
+    <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.36l-3.24-2.54c-.9.6-2.05.96-3.38.96-2.6 0-4.8-1.76-5.6-4.12H3.05v2.62A10 10 0 0 0 12 22Z" />
+    <path fill="#FBBC05" d="M6.4 13.94A6 6 0 0 1 6.08 12c0-.67.11-1.32.32-1.94V7.44H3.05A10 10 0 0 0 2 12c0 1.61.38 3.14 1.05 4.56l3.35-2.62Z" />
+    <path fill="#EA4335" d="M12 5.94c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.95 5.44l3.35 2.62c.8-2.36 3-4.12 5.6-4.12Z" />
+  </svg>
+);
+
+const FacebookMark = () => (
+  <span aria-hidden="true" className="grid h-5 w-5 place-items-center rounded-full bg-[#1877F2] text-[16px] font-black leading-none text-white">f</span>
 );
 
 type AppLanguage = 'es' | 'en';
@@ -1074,7 +1086,7 @@ const LanguageSwitcher = ({ language, onChange, compact = false }: { language: A
                 key={option}
                 type="button"
                 onClick={() => onChange(option)}
-                className={`rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-colors ${
+                className={`min-h-11 min-w-11 rounded-full px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-colors ${
                     language === option ? 'bg-mvp-gold text-black' : 'text-zinc-400 hover:text-white'
                 }`}
             >
@@ -1455,7 +1467,7 @@ type AppButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const APP_BUTTON_VARIANTS: Record<AppButtonVariant, string> = {
-  primary: 'bg-mvp-action text-[#171309] border border-amber-100/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_24px_rgba(245,196,81,0.16)] hover:bg-mvp-action-hover hover:border-amber-100/45 focus:ring-amber-300/25',
+  primary: 'bg-mvp-action text-white border border-violet-200/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(138,43,226,0.28)] hover:bg-mvp-action-hover hover:border-violet-200/40 focus:ring-violet-300/25',
   secondary: 'bg-[#111620] text-zinc-100 border border-[#2a3140] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:bg-[#181e2a] hover:border-violet-400/28 focus:ring-violet-400/18',
   tertiary: 'bg-transparent text-zinc-300 border border-transparent hover:bg-[#111620] hover:text-white focus:ring-zinc-500/18',
   success: 'bg-emerald-600/90 text-white border border-emerald-300/25 hover:bg-emerald-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_20px_rgba(16,185,129,0.12)] focus:ring-emerald-400/25',
@@ -1816,7 +1828,7 @@ const PlanAIModal = ({
                             disabled={!selectedClient}
                             variant="primary"
                             icon={selectedType === 'routine' ? <Dumbbell size={17} /> : <Utensils size={17} />}
-                            className="w-full"
+                            className="ai-magic-button w-full"
                         >
                             {selectedType === 'routine' ? modalCopy.generateRoutine : modalCopy.generateDiet}
                         </AppButton>
@@ -2110,51 +2122,57 @@ const AuthView = ({
   })();
 
   return (
-    <PageTransition className={`min-h-screen bg-black text-white flex justify-center relative ${forceCompactAuthPreview ? 'items-start p-3 pt-6 overflow-y-auto custom-scrollbar' : 'items-center p-4 overflow-hidden'}`}>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.12),transparent_32%),linear-gradient(135deg,rgba(39,39,42,0.35),transparent_45%)]" />
+    <PageTransition className={`auth-portal min-h-screen bg-black text-white flex justify-center relative ${forceCompactAuthPreview ? 'items-start p-3 pt-6 overflow-y-auto custom-scrollbar' : 'items-center p-4 overflow-hidden'}`}>
+      <div className="auth-portal-atmosphere absolute inset-0" />
       <div className="absolute top-4 right-4 z-30">
         <LanguageSwitcher language={language} onChange={onLanguageChange} compact />
       </div>
 
-      <div className={`relative z-10 w-full grid gap-6 items-center min-w-0 ${forceCompactAuthPreview ? 'max-w-md' : 'max-w-5xl lg:grid-cols-[0.95fr_1.05fr]'}`}>
-        <section className={forceCompactAuthPreview ? 'hidden' : 'hidden lg:block'}>
-          <div className="mb-8">
-            <div className="inline-flex items-center gap-3 mb-5">
-              <MVPBrandLogo className="w-16 h-16 rounded-2xl bg-black/40 border border-mvp-gold/20 p-1.5 shadow-primary" />
+      <div className={`auth-layout relative z-10 w-full grid items-stretch min-w-0 ${forceCompactAuthPreview ? 'max-w-md' : 'max-w-[1180px] lg:grid-cols-[1.08fr_0.92fr]'}`}>
+        <section className={`${forceCompactAuthPreview ? 'hidden' : 'hidden lg:flex'} auth-hero`}>
+          <img src="/brand/mvp-paywall-fitness.jpg" alt="" className="auth-hero-image" />
+          <div className="auth-hero-shade" />
+          <div className="auth-hero-speed-lines" aria-hidden="true" />
+          <div className="auth-hero-content">
+            <div className="inline-flex items-center gap-3">
+              <MVPBrandLogo className="h-14 w-14 rounded-xl border border-violet-300/30 bg-black/55 p-1 shadow-primary" />
               <div>
-                <h1 className="text-4xl font-black tracking-tight">MVP<span className="text-mvp-gold">TRAINER</span></h1>
-                <p className="text-zinc-500 text-sm font-semibold">{copy.brandSubtitle}</p>
+                <p className="brand-wordmark text-2xl font-extrabold">MVP<span>TRAINER</span></p>
+                <p className="text-xs font-semibold text-slate-300">{copy.brandSubtitle}</p>
               </div>
             </div>
-            <h2 className="text-4xl font-black leading-tight max-w-lg">{copy.value}</h2>
-            <p className="text-zinc-400 mt-5 leading-relaxed max-w-md">{copy.support}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 max-w-lg">
-            {APP_COPY[language].authFeatures.map(item => (
-              <div key={item} className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4">
-                <Check size={16} className="text-mvp-gold mb-3" />
-                <p className="font-bold text-sm">{item}</p>
+            <div className="mt-auto max-w-xl pb-2">
+              <span className="auth-hero-kicker"><Activity size={15} /> Precision Velocity</span>
+              <h1 className="mt-4 text-[42px] font-extrabold leading-[1.08] text-white">{copy.value}</h1>
+              <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-slate-300">{copy.support}</p>
+              <div className="mt-7 grid grid-cols-2 gap-3">
+                {APP_COPY[language].authFeatures.map((item, index) => (
+                  <div key={item} className="auth-feature">
+                    <span>{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
+                    <p>{item}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </section>
 
         <section className="w-full max-w-md mx-auto min-w-0">
           <div className={`${forceCompactAuthPreview ? 'block' : 'lg:hidden'} text-center mb-6`}>
-            <MVPBrandLogo className="w-20 h-20 mx-auto rounded-2xl bg-black/40 border border-mvp-gold/20 p-1.5 shadow-primary mb-3" />
-            <h1 className="text-3xl font-black">MVP<span className="text-mvp-gold">TRAINER</span></h1>
+            <MVPBrandLogo className="w-16 h-16 mx-auto rounded-2xl bg-black/40 border border-violet-300/25 p-1 shadow-primary mb-3" />
+            <h1 className="brand-wordmark text-3xl font-extrabold">MVP<span>TRAINER</span></h1>
             <p className="text-zinc-500 text-sm">{copy.brandSubtitle}</p>
           </div>
 
-          <div className="bg-zinc-900/95 border border-zinc-800 rounded-[28px] p-5 sm:p-6 shadow-2xl">
+          <div className="auth-card">
             {(mode === 'login' || mode === 'register') && (
               <div className="grid grid-cols-2 gap-2 bg-black border border-zinc-800 rounded-2xl p-1 mb-5 relative">
-                <motion.button type="button" onClick={() => switchMode('login')} whileTap={MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className={`relative z-10 py-2.5 rounded-xl text-sm font-black transition-colors ${mode === 'login' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}>
-                  {mode === 'login' && <motion.span layoutId="auth-tab-indicator" className="absolute inset-0 rounded-xl bg-mvp-gold -z-10" transition={{ duration: 0.18, ease: MOTION_EASE }} />}
+                <motion.button type="button" onClick={() => switchMode('login')} whileTap={MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className={`relative z-10 min-h-11 py-2.5 rounded-xl text-sm font-black transition-colors ${mode === 'login' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}>
+                  {mode === 'login' && <motion.span layoutId="auth-tab-indicator" className="auth-tab-indicator absolute inset-0 rounded-xl -z-10" transition={{ duration: 0.18, ease: MOTION_EASE }} />}
                   {copy.login}
                 </motion.button>
-                <motion.button type="button" onClick={() => switchMode('register')} whileTap={MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className={`relative z-10 py-2.5 rounded-xl text-sm font-black transition-colors ${mode === 'register' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}>
-                  {mode === 'register' && <motion.span layoutId="auth-tab-indicator" className="absolute inset-0 rounded-xl bg-mvp-gold -z-10" transition={{ duration: 0.18, ease: MOTION_EASE }} />}
+                <motion.button type="button" onClick={() => switchMode('register')} whileTap={MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className={`relative z-10 min-h-11 py-2.5 rounded-xl text-sm font-black transition-colors ${mode === 'register' ? 'text-white' : 'text-zinc-400 hover:text-white'}`}>
+                  {mode === 'register' && <motion.span layoutId="auth-tab-indicator" className="auth-tab-indicator absolute inset-0 rounded-xl -z-10" transition={{ duration: 0.18, ease: MOTION_EASE }} />}
                   {copy.register}
                 </motion.button>
               </div>
@@ -2169,12 +2187,12 @@ const AuthView = ({
 
             {(mode === 'login' || mode === 'register') && (
               <div className="space-y-3 mb-5">
-                <motion.button type="button" onClick={() => handleOAuth('google')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="w-full bg-black hover:bg-zinc-950 border border-zinc-700 text-white rounded-xl py-3 font-bold text-sm flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-wait">
-                  {socialLoading === 'google' ? <Loader2 size={16} className="animate-spin" /> : <span className="w-6 h-6 rounded-full bg-white text-black flex items-center justify-center font-black">G</span>}
+                <motion.button type="button" onClick={() => handleOAuth('google')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-social-button">
+                  {socialLoading === 'google' ? <Loader2 size={16} className="animate-spin" /> : <span className="auth-social-mark"><GoogleMark /></span>}
                   {copy.google}
                 </motion.button>
-                <motion.button type="button" onClick={() => handleOAuth('facebook')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="w-full bg-black hover:bg-zinc-950 border border-zinc-700 text-white rounded-xl py-3 font-bold text-sm flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-wait">
-                  {socialLoading === 'facebook' ? <Loader2 size={16} className="animate-spin" /> : <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-black">f</span>}
+                <motion.button type="button" onClick={() => handleOAuth('facebook')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-social-button">
+                  {socialLoading === 'facebook' ? <Loader2 size={16} className="animate-spin" /> : <span className="auth-social-mark"><FacebookMark /></span>}
                   {copy.facebook}
                 </motion.button>
                 <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider font-bold text-zinc-600">
@@ -2223,22 +2241,17 @@ const AuthView = ({
                 <div className="mt-5 space-y-3 text-center">
               {mode === 'login' && (
                 <>
-                  <button type="button" onClick={() => switchMode('forgot')} className="text-sm text-mvp-gold hover:text-amber-300 font-semibold">{copy.forgot}</button>
-                  <button type="button" onClick={() => switchMode('register')} className="block w-full text-sm text-zinc-400 hover:text-white">{copy.newHere}</button>
+                  <button type="button" onClick={() => switchMode('forgot')} className="auth-link-button text-sm text-mvp-gold hover:text-purple-300 font-semibold">{copy.forgot}</button>
+                  <button type="button" onClick={() => switchMode('register')} className="auth-link-button w-full text-sm text-zinc-400 hover:text-white">{copy.newHere}</button>
                 </>
               )}
               {mode === 'register' && (
-                <button type="button" onClick={() => switchMode('login')} className="text-sm text-zinc-400 hover:text-white">{copy.already}</button>
+                <button type="button" onClick={() => switchMode('login')} className="auth-link-button text-sm text-zinc-400 hover:text-white">{copy.already}</button>
               )}
               {(mode === 'forgot' || mode === 'reset') && (
-                <button type="button" onClick={() => switchMode('login')} className="text-sm text-zinc-400 hover:text-white">{copy.backLogin}</button>
+                <button type="button" onClick={() => switchMode('login')} className="auth-link-button text-sm text-zinc-400 hover:text-white">{copy.backLogin}</button>
               )}
                 </div>
-                {(mode === 'login' || mode === 'register') && (
-                  <p className="mt-5 pt-4 border-t border-zinc-800 text-center text-[11px] leading-relaxed text-zinc-500">
-                    {copy.freeCopy}
-                  </p>
-                )}
               </PageTransition>
             </AnimatePresence>
           </div>
@@ -2738,17 +2751,13 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
     };
 
     const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-    const routinesUsed = user?.subscription?.usage?.aiRoutinesByClient?.[client.id] || 0;
-    const dietsUsed = user?.subscription?.usage?.aiDietsByClient?.[client.id] || 0;
-    const isPro = isActivePro(user);
-
     return (
-        <div className="flex flex-col h-full">
+        <div className="client-detail-page flex flex-col h-full">
             {/* Header Cliente */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="client-detail-header flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><ChevronRight className="rotate-180"/></button>
-                    <img src={client.avatarUrl} className="w-14 h-14 rounded-full border border-mvp-gold object-cover" />
+                    <img src={client.avatarUrl} alt="" className="client-detail-avatar w-14 h-14 rounded-full border border-mvp-gold object-cover" />
                     <div>
                         <h2 className="text-xl font-bold text-white">{client.name}</h2>
                         <span className="text-xs text-mvp-gold bg-mvp-gold/10 px-2 py-0.5 rounded border border-mvp-gold/20">{goalLabel(client.mainGoal || '', language)}</span>
@@ -2766,7 +2775,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-zinc-800 mb-6 overflow-x-auto">
+            <div className="client-detail-tabs flex border-b border-zinc-800 mb-6 overflow-x-auto">
                 {(['profile', 'agenda', 'routines', 'nutrition', 'payments'] as const).map(tab => (
                     <motion.button
                         key={tab} 
@@ -2895,11 +2904,6 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <h3 className="font-bold text-white">{detailCopy.workouts}</h3>
-                                {!isPro && (
-                                    <p className="mt-1 text-[11px] text-zinc-500">
-                                        {user.trainerUsage?.ai_routines_generated_total || 0}/2 {detailCopy.historical}
-                                    </p>
-                                )}
                             </div>
                             <AppButton
                                 onClick={handleAddRoutine}
@@ -2907,7 +2911,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                 isLoading={isGenerating}
                                 variant="primary"
                                 icon={<Sparkles size={16} />}
-                                className="w-full sm:w-auto"
+                                className="ai-magic-button w-full sm:w-auto"
                             >
                                 {isGenerating ? detailCopy.generatingWorkout : detailCopy.generateWorkout}
                             </AppButton>
@@ -2915,8 +2919,8 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                         {isLoadingData ? (<SkeletonRoutine />) : (
                           <>
                             {(Array.isArray(clientRoutines) ? clientRoutines : []).length === 0 && !isGenerating && (
-                                <div className="text-center px-5 py-9 bg-zinc-900/40 rounded-xl border border-dashed border-zinc-800">
-                                    <Dumbbell size={24} className="mx-auto text-zinc-700 mb-3" />
+                                <div className="guided-empty-state text-center px-5 py-9 bg-zinc-900/40 rounded-xl border border-dashed border-zinc-800">
+                                    <span className="guided-empty-icon mb-3"><Dumbbell size={24} /></span>
                                     <p className="text-sm font-bold text-zinc-300">{detailCopy.noWorkouts}</p>
                                     <p className="mt-1 text-xs leading-relaxed text-zinc-500">{detailCopy.noWorkoutsHint}</p>
                                 </div>
@@ -3041,11 +3045,6 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <h3 className="font-bold text-white">{detailCopy.nutritionPlan}</h3>
-                                {!isPro && (
-                                    <p className="mt-1 text-[11px] text-zinc-500">
-                                        {user.trainerUsage?.ai_diets_generated_total || 0}/2 {detailCopy.historical}
-                                    </p>
-                                )}
                             </div>
                             {!isLoadingData && clientDiet && (
                                 <AppButton
@@ -3054,7 +3053,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                     isLoading={isGenerating}
                                     variant="primary"
                                     icon={<Sparkles size={16} />}
-                                    className="w-full sm:w-auto"
+                                    className="ai-magic-button w-full sm:w-auto"
                                 >
                                     {isGenerating ? detailCopy.generatingDiet : detailCopy.generateDiet}
                                 </AppButton>
@@ -3064,8 +3063,8 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                         {isLoadingData ? (<SkeletonRoutine />) : (
                           <>
                             {!clientDiet ? (
-                                <div className="text-center py-10 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
-                                    <Utensils size={28} className="mx-auto text-zinc-700 mb-3" />
+                                <div className="guided-empty-state text-center py-10 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
+                                    <span className="guided-empty-icon mb-3"><Utensils size={28} /></span>
                                     <p className="text-sm font-bold text-zinc-300">{detailCopy.noDiets}</p>
                                     <p className="text-zinc-500 mt-1 mb-5 max-w-xs mx-auto text-xs leading-relaxed">{detailCopy.dietEmptyCta}</p>
                                     <AppButton
@@ -3074,7 +3073,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                         variant="primary"
                                         icon={isGenerating ? undefined : <Sparkles size={16}/>}
                                         isLoading={isGenerating}
-                                        className="mx-auto"
+                                        className="ai-magic-button mx-auto"
                                     >
                                         {isGenerating ? detailCopy.generatingDiet : detailCopy.generateDiet}
                                     </AppButton>
@@ -4765,10 +4764,6 @@ const App = () => {
     await dbProvider.signOut();
   };
 
-  // Banner State
-  const [lastBannerShownAt, setLastBannerShownAt] = useState<number | null>(null);
-  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
-  
   // Public Route Handling Check
   const [isPublicRoute, setIsPublicRoute] = useState(false);
   const [publicTrainerId, setPublicTrainerId] = useState<string | null>(null);
@@ -5149,21 +5144,6 @@ const App = () => {
     }
   }, [user, clients, isReconnecting]);
 
-  // Upgrade Banner Timer
-  useEffect(() => {
-    if (!user || isPublicRoute) return;
-    const checkBanner = () => {
-        const nowTs = Date.now();
-        if (shouldShowUpgradeBanner(user, lastBannerShownAt, nowTs)) {
-            setShowUpgradeBanner(true);
-            setLastBannerShownAt(nowTs);
-        }
-    };
-    checkBanner();
-    const interval = setInterval(checkBanner, 60 * 1000);
-    return () => clearInterval(interval);
-  }, [user, lastBannerShownAt, isPublicRoute]);
-
   // REMINDER ENGINE
   useEffect(() => {
     if (!user || clients.length === 0 || isPublicRoute) return;
@@ -5183,9 +5163,6 @@ const App = () => {
   if (isPublicRoute && publicTrainerId) {
       return <TrainerPublicPage trainerId={publicTrainerId} language={language} />;
   }
-
-  // Derived State
-  const planStatus = user ? getTranslatedPlanStatus(user, language, getPlanStatusLabel(user)) : null;
 
   const refreshBillingRecords = async (trainerId = user?.uid) => {
       if (!trainerId) {
@@ -5616,17 +5593,6 @@ const App = () => {
                 <Banknote size={18} />
              </button>
 
-             {/* Plan Badge - Clickable to go to Account */}
-             {planStatus && (
-                 <button 
-                    onClick={() => setView('account')}
-                    className={`flex flex-col items-end px-3 py-1 rounded-lg border border-transparent ${planStatus.bg} hover:opacity-80 transition-opacity`}
-                    aria-label={`${planStatus.label}: ${planStatus.detail}`}
-                 >
-                     <span className={`text-[10px] font-extrabold tracking-widest ${planStatus.color}`}>{planStatus.label}</span>
-                     <span className="text-[10px] text-zinc-400">{planStatus.detail}</span>
-                 </button>
-             )}
              <button onClick={() => setView('account')} className="w-10 h-10 md:w-9 md:h-9 bg-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700" title={language === 'es' ? 'Mi cuenta' : 'My account'} aria-label={language === 'es' ? 'Mi cuenta' : 'My account'}>
                 <UserIcon size={18} />
              </button>
@@ -5638,43 +5604,14 @@ const App = () => {
 
       <main className="flex-1 p-4 md:p-6 overflow-hidden flex flex-col max-w-5xl mx-auto w-full">
          
-         {/* UPGRADE BANNER (Conditional) */}
-         {showUpgradeBanner && user?.subscription?.type === 'free' && view === 'dashboard' && (
-            <div className="bg-gradient-to-r from-zinc-900 to-black border border-mvp-gold/30 text-sm text-zinc-200 px-4 py-3 flex flex-col sm:flex-row justify-between items-center rounded-xl mb-6 shadow-lg animate-fadeIn gap-3">
-                <div className="flex items-center gap-3">
-                    <div className="bg-mvp-gold/20 p-2 rounded-full text-mvp-gold"><Crown size={16}/></div>
-                    <span>{appCopy.unlockBanner}</span>
-                </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setShowUpgradeBanner(false)}
-                        className="text-zinc-500 hover:text-white px-2 py-1 text-xs"
-                    >
-                        {appCopy.close}
-                    </button>
-                    <button
-                    onClick={() => {
-                        setShowUpgradeBanner(false);
-                        setShowPaywall(true);
-                    }}
-                    className="bg-mvp-gold hover:bg-amber-600 text-black font-bold px-4 py-2 rounded-lg text-xs transition-colors"
-                    >
-                    {appCopy.seePlans}
-                    </button>
-                </div>
-            </div>
-         )}
-
          <AnimatePresence mode="wait" initial={false}>
          {view === 'dashboard' ? (
              <PageTransition key="dashboard" className="space-y-5 overflow-y-auto pb-24 custom-scrollbar motion-card-stagger">
-                 <section className="flex items-start gap-4">
+                 <section className="dashboard-command-header flex items-start gap-4">
                      <div className="min-w-0">
+                         <span className="dashboard-command-kicker"><Zap size={13} /> {language === 'es' ? 'Centro de comando' : 'Command center'}</span>
                          <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight truncate">{appCopy.hello}, {user.displayName}</h1>
                          <p className="text-zinc-500 text-sm mt-1">{appCopy.dayStarts}</p>
-                         {!isActivePro(user) && !user.subscription?.isSyncing && (
-                             <span className="inline-flex mt-3 text-[10px] uppercase tracking-wider font-black text-zinc-400 border border-zinc-800 bg-zinc-900 px-2.5 py-1 rounded-full">{appCopy.freePlan}</span>
-                         )}
                      </div>
                  </section>
 
@@ -5711,7 +5648,7 @@ const App = () => {
                  <section className="space-y-3">
                      <h2 className="text-lg font-black text-white">{appCopy.todayPriority}</h2>
                      {nextItems.length === 0 ? (
-                         <div className="border border-dashed border-zinc-800 rounded-2xl p-5">
+                         <div className="guided-empty-state border border-dashed border-zinc-800 rounded-2xl p-5">
                              <p className="text-sm font-bold text-zinc-300">{appCopy.allReadyToday}</p>
                              <p className="mt-1 text-xs leading-relaxed text-zinc-500">{appCopy.allReadyTodayHint}</p>
                          </div>
@@ -5772,8 +5709,8 @@ const App = () => {
                              <SkeletonList count={3} />
                          </div>
                      ) : activeClients.length === 0 ? (
-                         <div className="text-center px-5 py-10 border border-dashed border-zinc-800 rounded-2xl">
-                             <div className="mx-auto mb-4 w-11 h-11 rounded-xl bg-mvp-action/10 text-mvp-action flex items-center justify-center">
+                         <div className="guided-empty-state text-center px-5 py-10 border border-dashed border-zinc-800 rounded-2xl">
+                             <div className="guided-empty-icon mb-4">
                                  <Users size={20} />
                              </div>
                              <p className="text-sm font-black text-zinc-200">{appCopy.firstClientPrompt}</p>

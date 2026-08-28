@@ -173,10 +173,10 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-1 pb-24 sm:px-3">
-      <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="module-page schedule-page mx-auto w-full max-w-5xl px-1 pb-24 sm:px-3">
+      <header className="module-page-header mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300">
+          <div className="module-title-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300">
             <CalendarDays size={21} />
           </div>
           <div>
@@ -187,7 +187,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
             </p>
           </div>
         </div>
-        <div className="inline-grid grid-cols-2 rounded-xl border border-zinc-800 bg-zinc-950 p-1">
+        <div className="module-segmented inline-grid grid-cols-2 rounded-xl border border-zinc-800 bg-zinc-950 p-1">
           {(['today', 'week'] as const).map(option => (
             <button
               key={option}
@@ -279,8 +279,8 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
           <section>
             <h2 className="mb-2 text-sm font-black uppercase tracking-[0.06em] text-zinc-300">{copy.dailyRoute}</h2>
             {todaySchedule.sessions.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/35 p-8 text-center">
-                <CalendarDays className="mx-auto text-zinc-700" size={26} />
+              <div className="guided-empty-state rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/35 p-8 text-center">
+                <span className="guided-empty-icon"><CalendarDays size={26} /></span>
                 <p className="mt-4 text-sm font-black text-zinc-300">{copy.noSchedule}</p>
                 <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-zinc-600">{copy.noScheduleHint}</p>
               </div>
