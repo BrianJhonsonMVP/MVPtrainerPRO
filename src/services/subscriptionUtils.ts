@@ -6,7 +6,7 @@ export const LIMITS = {
   FREE_AI_DIETS_HISTORICAL: 2,
   FREE_ROUTINES_WEEKLY: 2,
   FREE_DIETS_WEEKLY: 2,
-  TRIAL_DAYS: 15
+  TRIAL_DAYS: 21
 };
 
 export interface PlanStatus {
@@ -52,17 +52,17 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
 
   if (type === 'trial') {
     return {
-      label: 'Prueba Gratuita',
-      color: 'text-amber-500',
-      detail: 'Límites Free activos hasta pasar a PRO',
-      bg: 'bg-amber-500/10'
+      label: isActive ? 'Prueba Gratuita' : 'Acceso vencido',
+      color: isActive ? 'text-violet-300' : 'text-zinc-500',
+      detail: isActive ? 'Acceso completo durante 21 días' : 'Tus datos están protegidos hasta activar tu plan',
+      bg: isActive ? 'bg-violet-500/10' : 'bg-zinc-900'
     };
   }
 
   return {
-    label: 'Plan Free',
+    label: 'Acceso vencido',
     color: 'text-zinc-400',
-    detail: 'Límites históricos activos',
+    detail: 'Tus datos están protegidos hasta activar tu plan',
     bg: 'bg-zinc-900'
   };
 };

@@ -57,20 +57,25 @@ const buildSubscription = (
   status: SubscriptionStatus,
   source: SubscriptionSource,
   confirmedAt: string,
-  row?: SubscriptionRow | ProfileSubscriptionRow
+  row?: SubscriptionRow | ProfileSubscriptionRow,
+  now: Date = new Date()
 ): UserSubscription => {
   const subscriptionRow = row as SubscriptionRow | undefined;
   const periodEnd = subscriptionRow?.current_period_end || null;
   const active = plan === 'pro'
-    ? ACTIVE_STATUSES.has(status) && isDateCurrent(periodEnd)
+    ? ACTIVE_STATUSES.has(status) && isDateCurrent(periodEnd, now)
     : plan === 'trial'
-      ? ACTIVE_STATUSES.has(status) && isDateCurrent(subscriptionRow?.trial_ends_at)
+      ? ACTIVE_STATUSES.has(status) && Boolean(subscriptionRow?.trial_ends_at) && isDateCurrent(subscriptionRow?.trial_ends_at, now)
       : false;
+
+  const resolvedStatus = (plan === 'pro' || plan === 'trial') && ACTIVE_STATUSES.has(status) && !active
+    ? 'expired'
+    : status;
 
   return {
     type: plan,
     isActive: active,
-    status: plan === 'pro' && ACTIVE_STATUSES.has(status) && !isDateCurrent(periodEnd) ? 'expired' : status,
+    status: resolvedStatus,
     source,
     confirmedAt,
     isSyncing: false,
@@ -92,7 +97,7 @@ export const resolveSubscriptionEntitlements = (
   const confirmedAt = now.toISOString();
 
   if (DEV_FORCE_PRO) {
-    return buildSubscription('pro', 'active', 'development', confirmedAt);
+    return buildSubscription('pro', 'active', 'development', confirmedAt, undefined, now);
   }
 
   const rows = Array.isArray(subscriptions) ? subscriptions : [];
@@ -103,7 +108,17 @@ export const resolveSubscriptionEntitlements = (
   });
 
   if (activePro) {
-    return buildSubscription('pro', normalizeStatus(activePro.status, 'pro'), 'subscriptions', confirmedAt, activePro);
+    return buildSubscription('pro', normalizeStatus(activePro.status, 'pro'), 'subscriptions', confirmedAt, activePro, now);
+  }
+
+  const activeTrial = rows.find(row => {
+    const plan = normalizePlan(row.plan_type);
+    const status = row.status || '';
+    return plan === 'trial' && ACTIVE_STATUSES.has(status) && Boolean(row.trial_ends_at) && isDateCurrent(row.trial_ends_at, now);
+  });
+
+  if (activeTrial) {
+    return buildSubscription('trial', normalizeStatus(activeTrial.status, 'trial'), 'subscriptions', confirmedAt, activeTrial, now);
   }
 
   const latestExplicit = rows.find(row => {
@@ -113,13 +128,13 @@ export const resolveSubscriptionEntitlements = (
 
   if (latestExplicit) {
     const plan = normalizePlan(latestExplicit.plan_type)!;
-    return buildSubscription(plan, normalizeStatus(latestExplicit.status, plan), 'subscriptions', confirmedAt, latestExplicit);
+    return buildSubscription(plan, normalizeStatus(latestExplicit.status, plan), 'subscriptions', confirmedAt, latestExplicit, now);
   }
 
   const profilePlan = normalizePlan(profile?.plan_type);
   if (profilePlan) {
     const profileStatus = profile?.account_status || (profilePlan === 'free' ? 'free' : '');
-    return buildSubscription(profilePlan, normalizeStatus(profileStatus, profilePlan), 'profiles', confirmedAt, profile || undefined);
+    return buildSubscription(profilePlan, normalizeStatus(profileStatus, profilePlan), 'profiles', confirmedAt, profile || undefined, now);
   }
 
   throw new Error('No confirmed subscription state was returned by Supabase.');

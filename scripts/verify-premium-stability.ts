@@ -5,7 +5,13 @@ import {
   mergeUserWithLastConfirmedPlan,
   resolveSubscriptionEntitlements
 } from '../src/services/subscriptionEntitlements';
-import { canUseFeature, isActivePro } from '../src/services/subscriptionLogic';
+import {
+  canUseFeature,
+  getTrialDaysRemaining,
+  hasFullAccess,
+  isActivePro,
+  isSubscriptionLocked
+} from '../src/services/subscriptionLogic';
 import { getDaySchedule } from '../src/services/scheduleService';
 import {
   buildPaymentEventsForMonth,
@@ -36,6 +42,30 @@ const proUser: User = {
 
 assert.equal(isActivePro(proUser), true, 'A confirmed active PRO account must have PRO access.');
 assert.equal(canUseFeature(proUser, 'agenda').allowed, true);
+
+const trialNow = new Date();
+const trialEnd = new Date(trialNow.getTime() + (21 * 24 * 60 * 60 * 1000));
+const trialSubscription = resolveSubscriptionEntitlements(
+  { plan_type: 'free', account_status: 'active' },
+  [{
+    plan_type: 'trial',
+    status: 'trialing',
+    billing_interval: 'monthly',
+    current_period_end: trialEnd.toISOString(),
+    trial_ends_at: trialEnd.toISOString(),
+    updated_at: trialNow.toISOString()
+  }],
+  trialNow
+);
+const trialUser: User = { ...proUser, uid: 'trainer-trial', subscription: trialSubscription };
+assert.equal(hasFullAccess(trialUser, trialNow), true, 'An active trial must unlock every product feature.');
+assert.equal(canUseFeature(trialUser, 'generateDiet').allowed, true);
+assert.equal(getTrialDaysRemaining(trialUser, trialNow), 21);
+
+const expiredAt = new Date(trialEnd.getTime() + 1);
+assert.equal(hasFullAccess(trialUser, expiredAt), false, 'Trial access must stop after the server deadline.');
+assert.equal(isSubscriptionLocked(trialUser, expiredAt), true);
+assert.equal(canUseFeature({ ...trialUser, subscription: { ...trialUser.subscription, isActive: false } }, 'viewClientDetails').allowed, false);
 
 const syncingPro = markSubscriptionSyncing(proUser);
 assert.equal(syncingPro.subscription.isSyncing, true);

@@ -10,7 +10,7 @@ import {
   normalizeBrandingConfig
 } from '../services/brandingService';
 import { uploadTrainerAsset } from '../services/trainerAssetService';
-import { isActivePro } from '../services/subscriptionLogic';
+import { hasFullAccess } from '../services/subscriptionLogic';
 import PremiumLockOverlay from './PremiumLockOverlay';
 
 type AppLanguage = 'es' | 'en';
@@ -96,7 +96,7 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({
   language = 'es'
 }) => {
   const copy = COPY[language];
-  const isPro = isActivePro(user);
+  const isPro = hasFullAccess(user);
   const savedConfig = useMemo(() => normalizeBrandingConfig(user.branding), [
     user.branding?.brandName,
     user.branding?.logoUrl,

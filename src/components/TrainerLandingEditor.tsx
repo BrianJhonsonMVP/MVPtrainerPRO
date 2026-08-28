@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Camera, CheckCircle2, Copy, Globe, ImageDown, Loader2, Plus, Save, Share2, User, X } from 'lucide-react';
 import { dbProvider } from '../data';
 import { uploadTrainerAsset } from '../services/trainerAssetService';
-import { isActivePro } from '../services/subscriptionLogic';
+import { hasFullAccess } from '../services/subscriptionLogic';
 import { PublicProfile, User as AppUser } from '../types';
 import { generateTrainerSocialCard, shareOrDownloadTrainerCard } from '../utils/socialCardGenerator';
 import PremiumLockOverlay from './PremiumLockOverlay';
@@ -99,7 +99,7 @@ const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
 
 const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywall, language = 'es' }) => {
   const copy = COPY[language];
-  const isPro = isActivePro(user);
+  const isPro = hasFullAccess(user);
   const [profile, setProfile] = useState<PublicProfile>({
     description: user.publicProfile?.description || '',
     services: user.publicProfile?.services || [],

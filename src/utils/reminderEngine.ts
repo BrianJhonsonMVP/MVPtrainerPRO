@@ -1,6 +1,6 @@
 
 import { Client, User } from "../types";
-import { isActivePro } from "../services/subscriptionLogic";
+import { hasFullAccess } from "../services/subscriptionLogic";
 
 const REMINDER_STORAGE_KEY = 'mvp_sent_reminders';
 
@@ -81,7 +81,7 @@ export const checkReminders = (
 
   const now = new Date();
   const sentReminders = getSentReminders();
-  const isPro = isActivePro(user);
+  const isPro = hasFullAccess(user);
   
   // Nombres de días en español para coincidir con client.trainingDays
   const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];

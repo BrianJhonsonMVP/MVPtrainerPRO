@@ -15,7 +15,9 @@ import { dbProvider } from './data';
 import { checkLimit, checkAndResetUsage, getPlanStatusLabel, LIMITS, clearStaleUserCache } from './services/subscriptionUtils';
 import {
   canUseFeature,
-  isActivePro,
+  getTrialDaysRemaining,
+  hasFullAccess,
+  isSubscriptionLocked,
   registerUsage,
   normalizeSubscription,
   resetWeeklyUsageIfNeeded
@@ -511,9 +513,9 @@ const APP_COPY = {
             proDetail: 'Acceso total ilimitado',
             proExpiredDetail: 'Tu suscripción ha vencido',
             trialLabel: 'Prueba Gratuita',
-            trialDetail: 'Límites Free activos hasta pasar a PRO',
-            freeLabel: 'Plan Free',
-            freeDetail: 'Límites históricos activos'
+            trialDetail: 'Acceso completo durante 21 días',
+            freeLabel: 'Acceso vencido',
+            freeDetail: 'Tus datos están protegidos hasta activar tu plan'
         }
     },
     en: {
@@ -642,9 +644,9 @@ const APP_COPY = {
             proDetail: 'Unlimited full access',
             proExpiredDetail: 'Your subscription has expired',
             trialLabel: 'Free Trial',
-            trialDetail: 'Free limits active until upgrading to PRO',
-            freeLabel: 'Free Plan',
-            freeDetail: 'Historical limits active'
+            trialDetail: 'Full access for 21 days',
+            freeLabel: 'Access expired',
+            freeDetail: 'Your data is protected until you activate your plan'
         }
     }
 };
@@ -671,7 +673,14 @@ const getTranslatedPlanStatus = (user: AppUser | null, language: AppLanguage, fa
         };
     }
     if (type === 'trial') {
-        return { ...fallback, label: copy.trialLabel, detail: copy.trialDetail };
+        const daysRemaining = getTrialDaysRemaining(user);
+        return {
+            ...fallback,
+            label: isActive ? copy.trialLabel : copy.freeLabel,
+            detail: isActive && daysRemaining !== null
+                ? (language === 'es' ? `${daysRemaining} días de acceso completo restantes` : `${daysRemaining} full-access days remaining`)
+                : copy.freeDetail
+        };
     }
     return { ...fallback, label: copy.freeLabel, detail: copy.freeDetail };
 };
@@ -1559,6 +1568,18 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
     const [loading, setLoading] = useState(false);
     const copy = APP_COPY[language];
     const isLocalEnvironment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const trialExpired = isSubscriptionLocked(user) && user.subscription?.type === 'trial';
+    const paywallNote = trialExpired
+      ? (language === 'es' ? 'Tu información está protegida y no se eliminará.' : 'Your information is protected and will not be deleted.')
+      : copy.paywallFreeNote;
+    const paywallTitle = trialExpired
+      ? (language === 'es' ? 'Tu prueba de 21 días terminó' : 'Your 21-day trial has ended')
+      : copy.paywallTitle;
+    const paywallSubtitle = trialExpired
+      ? (language === 'es'
+        ? 'Activa tu plan para volver a abrir fichas, planes, agenda, pagos y envíos a clientes.'
+        : 'Activate your plan to reopen client records, plans, schedule, payments, and sharing tools.')
+      : copy.paywallSubtitle;
 
     const handleUpgrade = async (interval: PlanInterval) => {
         setLoading(true);
@@ -1629,11 +1650,11 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
                     <Crown size={15} />
                     <span className="text-[11px] font-black uppercase tracking-[0.12em]">MVP Trainer PRO</span>
                   </div>
-                  <p className="mt-0.5 text-[11px] text-zinc-300/80">{copy.paywallFreeNote}</p>
+                  <p className="mt-0.5 text-[11px] text-zinc-300/80">{paywallNote}</p>
                 </div>
               </div>
-              <h2 className="mt-4 max-w-xl text-2xl sm:text-3xl font-black leading-tight text-white">{copy.paywallTitle}</h2>
-              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-zinc-300">{copy.paywallSubtitle}</p>
+              <h2 className="mt-4 max-w-xl text-2xl sm:text-3xl font-black leading-tight text-white">{paywallTitle}</h2>
+              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-zinc-300">{paywallSubtitle}</p>
             </div>
           </section>
 
@@ -2270,7 +2291,7 @@ const AuthView = ({
 const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, requestConfirm, onShowToast, onLogout, language, onLanguageChange }: { user: AppUser, clients: Client[], onShowPaywall: () => void, onBack: () => void, onUpdateUser: (u: AppUser) => void, requestConfirm: (config: any) => void, onShowToast: (t: any) => void, onLogout?: () => void, language: AppLanguage, onLanguageChange: (language: AppLanguage) => void }) => {
   const copy = APP_COPY[language];
   const planStatus = user ? getTranslatedPlanStatus(user, language, getPlanStatusLabel(user)) : null;
-  const isPro = isActivePro(user);
+  const isPro = hasFullAccess(user);
   const publicProfileReady = Boolean(
     user.publicProfile?.description?.trim() &&
     normalizeWhatsAppPhone(user.publicProfile?.whatsAppNumber).length >= 7
@@ -2390,29 +2411,15 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
              <h4 className="font-bold text-white text-sm mb-4">{copy.usageLimits}</h4>
              <div className="space-y-4">
                {!isPro ? (
-                 <>
-                   <UsageProgress 
-                      current={user?.trainerUsage?.clients_created_total || 0} 
-                      max={2} 
-                      label={copy.historicalClients}
-                      onUpgrade={onShowPaywall}
-                      language={language}
-                   />
-                   <UsageProgress 
-                      current={user?.trainerUsage?.ai_routines_generated_total || 0} 
-                      max={2} 
-                      label={copy.historicalRoutines}
-                      onUpgrade={onShowPaywall}
-                      language={language}
-                   />
-                   <UsageProgress 
-                      current={user?.trainerUsage?.ai_diets_generated_total || 0} 
-                      max={2} 
-                      label={copy.historicalDiets}
-                      onUpgrade={onShowPaywall}
-                      language={language}
-                   />
-                 </>
+                 <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
+                   <div className="flex items-start gap-3">
+                     <Lock size={18} className="mt-0.5 shrink-0 text-violet-300" />
+                     <div>
+                       <p className="text-sm font-bold text-white">{language === 'es' ? 'Tu trabajo sigue guardado' : 'Your work is still saved'}</p>
+                       <p className="mt-1 text-xs leading-relaxed text-zinc-400">{language === 'es' ? 'Activa tu plan para recuperar inmediatamente fichas, rutinas, dietas, agenda, pagos y envíos.' : 'Activate your plan to immediately recover records, workouts, diets, schedule, payments, and sharing.'}</p>
+                     </div>
+                   </div>
+                 </div>
                ) : (
                  <>
                    <UsageProgress 
@@ -4565,6 +4572,7 @@ const GLOBAL_AUTH_INIT = { startedAt: 0 };
 
 const App = () => {
   const [language, setLanguageState] = useState<AppLanguage>(() => getStoredLanguage());
+  const [entitlementNow, setEntitlementNow] = useState(() => new Date());
   const isResetPasswordRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
   const setLanguage = (nextLanguage: AppLanguage) => {
@@ -4584,6 +4592,11 @@ const App = () => {
       // Some embedded previews expose a read-only document language.
     }
   }, [language]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setEntitlementNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   
   // Realtime subscription guards to prevent multiple concurrent channels
   const realtimeSubscribedRef = useRef<string | null>(null);
@@ -5483,6 +5496,9 @@ const App = () => {
 
   const showReconnecting = isReconnecting && (loading || !realtimeSubscribedRef.current);
   const appCopy = APP_COPY[language];
+  const hasAccess = hasFullAccess(user, entitlementNow);
+  const accessLocked = isSubscriptionLocked(user, entitlementNow);
+  const trialDaysRemaining = getTrialDaysRemaining(user, entitlementNow);
   const activeClients = clients.filter(isActiveClient);
   const todaySchedule = getDaySchedule(activeClients);
   const todayTrainingClients = todaySchedule.sessions.map(session => session.client);
@@ -5501,6 +5517,10 @@ const App = () => {
     ? `Hola ${client.name} ${EMOJI.wave} te recuerdo que hoy tenemos entrenamiento a las ${client.trainingTime || 'la hora acordada'}. Nos vemos puntual ${EMOJI.muscle}`
     : `Hi ${client.name} ${EMOJI.wave} this is a reminder that we have training today at ${client.trainingTime || 'the agreed time'}. See you on time ${EMOJI.muscle}`;
   const openPriorityWhatsApp = (client: Client, message: string) => {
+    if (!hasAccess) {
+      setShowPaywall(true);
+      return;
+    }
     const phone = getPriorityPhone(client);
     if (!phone) {
       setToast({ title: appCopy.noPhoneTitle, message: appCopy.noPhoneSend, type: 'warning' });
@@ -5509,6 +5529,10 @@ const App = () => {
     window.open(buildWhatsAppUrl(phone, message), '_blank');
   };
   const openPriorityChat = (client: Client) => {
+    if (!hasAccess) {
+      setShowPaywall(true);
+      return;
+    }
     const phone = getPriorityPhone(client);
     if (!phone) {
       setToast({ title: appCopy.noPhoneTitle, message: appCopy.noPhoneOpen, type: 'warning' });
@@ -5534,6 +5558,12 @@ const App = () => {
   ].slice(0, 3);
 
   const openClientDetail = (client: Client, tab: TabType = 'profile') => {
+    const check = canUseFeature(user, 'viewClientDetails');
+    if (!check.allowed) {
+      setShowPaywall(true);
+      setToast({ title: appCopy.proAccess, message: check.reason, type: 'warning' });
+      return;
+    }
     setSelectedClient(client);
     setClientInitialTab(tab);
     setClientAutoGenerateRequest(null);
@@ -5640,6 +5670,16 @@ const App = () => {
             )}
          </div>
          <div className="flex items-center gap-3">
+             {trialDaysRemaining !== null && (
+                <button
+                  onClick={() => setView('account')}
+                  className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-violet-400/25 bg-violet-500/10 text-xs font-bold text-violet-200"
+                  title={language === 'es' ? 'Ver estado de la prueba' : 'View trial status'}
+                >
+                  <Timer size={15} />
+                  {language === 'es' ? `${trialDaysRemaining} días de prueba` : `${trialDaysRemaining} trial days`}
+                </button>
+             )}
              {/* New Agenda Button */}
              <button 
                 onClick={() => {
@@ -5698,7 +5738,20 @@ const App = () => {
                      </div>
                  </section>
 
-                 <section className="dashboard-summary">
+                 {accessLocked && (
+                    <section className="rounded-2xl border border-violet-400/25 bg-[linear-gradient(135deg,rgba(139,92,246,0.16),rgba(13,17,25,0.96))] p-5 md:p-6">
+                      <div className="flex items-start gap-4">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-400/25 bg-violet-500/10 text-violet-200"><Lock size={20} /></span>
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-lg font-black text-white">{language === 'es' ? 'Tu prueba terminó, tus clientes siguen aquí' : 'Your trial ended, your clients are still here'}</h2>
+                          <p className="mt-1 text-sm leading-relaxed text-zinc-400">{language === 'es' ? 'Puedes ver la lista, pero las fichas, planes, agenda, pagos y envíos están protegidos hasta activar tu plan.' : 'You can see the list, but records, plans, schedule, payments, and sharing are protected until you activate your plan.'}</p>
+                          <AppButton onClick={() => setShowPaywall(true)} variant="primary" icon={<Crown size={16} />} className="mt-4">{language === 'es' ? 'Activar mi plan' : 'Activate my plan'}</AppButton>
+                        </div>
+                      </div>
+                    </section>
+                 )}
+
+                 <section className={accessLocked ? 'hidden' : 'dashboard-summary'}>
                      <div className="flex items-start justify-between gap-4 p-5">
                          <div className="min-w-0">
                              <div className="flex items-center gap-2 text-violet-300">
@@ -5728,7 +5781,7 @@ const App = () => {
                      </div>
                  </section>
 
-                 <section className="space-y-3">
+                 <section className={accessLocked ? 'hidden' : 'space-y-3'}>
                      <h2 className="text-lg font-black text-white">{appCopy.todayPriority}</h2>
                      {nextItems.length === 0 ? (
                          <div className="guided-empty-state border border-dashed border-zinc-800 rounded-2xl p-5">
@@ -5757,7 +5810,7 @@ const App = () => {
                      )}
                  </section>
 
-                 <section className="space-y-3">
+                 <section className={accessLocked ? 'hidden' : 'space-y-3'}>
                      <div className="flex items-center justify-between gap-3">
                          <h2 className="text-lg font-black text-white">{appCopy.quickActions}</h2>
                          <button onClick={() => setView('account')} className="text-xs font-bold text-zinc-500 hover:text-violet-300 transition-colors">
@@ -5822,19 +5875,25 @@ const App = () => {
                                              )}
                                              <div className="min-w-0">
                                                  <h4 className="font-black text-white text-sm group-hover:text-mvp-gold truncate">{client.name}</h4>
-                                                 <p className="text-xs text-zinc-500 truncate">{client.mainGoal ? goalLabel(client.mainGoal, language) : appCopy.undefinedGoal}</p>
-                                                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-                                                    {client.phone && <span className="truncate">WhatsApp: {client.phone}</span>}
-                                                    {client.trainingTime && <span className="truncate">{client.trainingTime}</span>}
-                                                 </div>
+                                                 {accessLocked ? (
+                                                   <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500"><Lock size={12} /> {language === 'es' ? 'Ficha protegida' : 'Protected record'}</p>
+                                                 ) : (
+                                                   <>
+                                                     <p className="text-xs text-zinc-500 truncate">{client.mainGoal ? goalLabel(client.mainGoal, language) : appCopy.undefinedGoal}</p>
+                                                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+                                                        {client.phone && <span className="truncate">WhatsApp: {client.phone}</span>}
+                                                        {client.trainingTime && <span className="truncate">{client.trainingTime}</span>}
+                                                     </div>
+                                                   </>
+                                                 )}
                                              </div>
                                          </div>
                                          <div className="flex items-center gap-3 shrink-0">
-                                             <span className={`hidden sm:inline-flex px-2 py-1 rounded-full border text-[10px] font-bold ${getPaymentBadgeClass(client)}`}>
+                                             {!accessLocked && <span className={`hidden sm:inline-flex px-2 py-1 rounded-full border text-[10px] font-bold ${getPaymentBadgeClass(client)}`}>
                                                 {getPaymentLabel(client, language)}
-                                             </span>
-                                             <span className={`w-2.5 h-2.5 rounded-full ${statusClass}`} />
-                                             <ChevronRight size={16} className="text-zinc-600"/>
+                                             </span>}
+                                             {!accessLocked && <span className={`w-2.5 h-2.5 rounded-full ${statusClass}`} />}
+                                             {accessLocked ? <Lock size={16} className="text-zinc-600" /> : <ChevronRight size={16} className="text-zinc-600"/>}
                                          </div>
                                      </button>
                                  );

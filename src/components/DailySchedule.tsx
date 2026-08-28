@@ -10,7 +10,7 @@ import {
   UserRound
 } from 'lucide-react';
 import { Client, User } from '../types';
-import { isActivePro } from '../services/subscriptionLogic';
+import { hasFullAccess } from '../services/subscriptionLogic';
 import {
   AppLanguage,
   DaySchedule,
@@ -147,7 +147,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
 }) => {
   const activeLanguage: AppLanguage = language === 'en' ? 'en' : 'es';
   const copy = COPY[activeLanguage];
-  const isPro = isActivePro(user);
+  const isPro = hasFullAccess(user);
   const isSyncing = Boolean(user.subscription?.isSyncing);
   const canRenderPremium = isPro;
   const [mode, setMode] = useState<'today' | 'week'>('today');

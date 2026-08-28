@@ -1,5 +1,4 @@
 import { User } from '../types';
-import { LIMITS } from './subscriptionUtils';
 
 export const DEV_FORCE_PRO = false;
 
@@ -15,6 +14,26 @@ export const getWeekStartISO = (date: Date = new Date()): string => {
 export const isActivePro = (user: User | null): boolean => {
   if (!user) return false;
   return DEV_FORCE_PRO || (user.subscription?.type === 'pro' && user.subscription?.isActive === true);
+};
+
+export const isActiveTrial = (user: User | null, now: Date = new Date()): boolean => {
+  if (!user || user.subscription?.type !== 'trial' || user.subscription?.isActive !== true) return false;
+  const trialEndsAt = user.subscription.trialEndsAt;
+  if (!trialEndsAt) return false;
+  const timestamp = new Date(trialEndsAt).getTime();
+  return Number.isFinite(timestamp) && timestamp > now.getTime();
+};
+
+export const hasFullAccess = (user: User | null, now: Date = new Date()): boolean =>
+  isActivePro(user) || isActiveTrial(user, now);
+
+export const isSubscriptionLocked = (user: User | null, now: Date = new Date()): boolean =>
+  Boolean(user && !user.subscription?.isSyncing && !hasFullAccess(user, now));
+
+export const getTrialDaysRemaining = (user: User | null, now: Date = new Date()): number | null => {
+  if (!isActiveTrial(user, now) || !user?.subscription?.trialEndsAt) return null;
+  const remaining = new Date(user.subscription.trialEndsAt).getTime() - now.getTime();
+  return Math.max(1, Math.ceil(remaining / (24 * 60 * 60 * 1000)));
 };
 
 export const normalizeSubscription = (user: User, now: Date = new Date()): User => {
@@ -61,60 +80,16 @@ export const resetWeeklyUsageIfNeeded = (user: User, now: Date = new Date()): Us
   return user;
 };
 
-const getUsageOrBlock = (user: User) => {
-  if (!user.trainerUsage || !user.trainerUsage.trainer_id) {
-    return {
-      usage: null,
-      reason: 'No se pudo validar tu uso histórico en Supabase. Revisa la tabla public.trainer_usage y sus policies antes de continuar.'
-    };
-  }
-  return { usage: user.trainerUsage, reason: undefined };
-};
-
-export const canUseFeature = (user: User | null, feature: string, context: any = {}): { allowed: boolean; reason?: string } => {
+export const canUseFeature = (user: User | null, _feature: string, _context: any = {}): { allowed: boolean; reason?: string } => {
   if (!user) return { allowed: false, reason: 'No hay sesión activa' };
-  if (isActivePro(user)) return { allowed: true };
-
-  const { usage, reason } = getUsageOrBlock(user);
-  if (!usage && ['createClient', 'generateRoutine', 'generateDiet'].includes(feature)) {
-    return { allowed: false, reason };
+  if (hasFullAccess(user)) return { allowed: true };
+  if (user.subscription?.isSyncing) {
+    return { allowed: false, reason: 'Estamos confirmando tu acceso. Inténtalo nuevamente en unos segundos.' };
   }
-
-  switch (feature) {
-    case 'createClient': {
-      const clientsCreatedTotal = usage?.clients_created_total ?? 0;
-      if (clientsCreatedTotal >= LIMITS.FREE_CLIENTS) {
-        return { allowed: false, reason: `Límite de plan gratuito alcanzado: máximo ${LIMITS.FREE_CLIENTS} clientes históricos.` };
-      }
-      return { allowed: true };
-    }
-
-    case 'generateRoutine': {
-      const routinesCreatedTotal = usage?.ai_routines_generated_total ?? 0;
-      if (routinesCreatedTotal >= LIMITS.FREE_AI_ROUTINES_HISTORICAL) {
-        return { allowed: false, reason: `Límite de plan gratuito alcanzado: máximo ${LIMITS.FREE_AI_ROUTINES_HISTORICAL} rutinas IA históricas.` };
-      }
-      return { allowed: true };
-    }
-
-    case 'generateDiet': {
-      const dietsCreatedTotal = usage?.ai_diets_generated_total ?? 0;
-      if (dietsCreatedTotal >= LIMITS.FREE_AI_DIETS_HISTORICAL) {
-        return { allowed: false, reason: `Límite de plan gratuito alcanzado: máximo ${LIMITS.FREE_AI_DIETS_HISTORICAL} dietas IA históricas.` };
-      }
-      return { allowed: true };
-    }
-
-    case 'agenda':
-    case 'payments':
-    case 'branding':
-    case 'publicProfile':
-    case 'whatsappShare':
-      return { allowed: false, reason: 'Esta función es exclusiva para usuarios PRO.' };
-
-    default:
-      return { allowed: true };
-  }
+  return {
+    allowed: false,
+    reason: 'Tu prueba de 21 días terminó. Tus datos siguen guardados y volverán a estar disponibles al activar tu plan.'
+  };
 };
 
 export const registerUsage = (user: User, feature: string, context: any = {}): User => {
@@ -147,7 +122,7 @@ export const registerUsage = (user: User, feature: string, context: any = {}): U
 
 export const shouldShowUpgradeBanner = (user: User | null, lastShownAt: number | null, now: number): boolean => {
   if (!user) return false;
-  if (isActivePro(user) || user.subscription?.isSyncing) return false;
+  if (hasFullAccess(user) || user.subscription?.isSyncing) return false;
 
   const oneDay = 24 * 60 * 60 * 1000;
   return !lastShownAt || now - lastShownAt > oneDay;

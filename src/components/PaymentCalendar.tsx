@@ -11,7 +11,7 @@ import {
   UserRound
 } from 'lucide-react';
 import { BillingRecord, Client, ClientPaymentInfo, User } from '../types';
-import { isActivePro } from '../services/subscriptionLogic';
+import { hasFullAccess } from '../services/subscriptionLogic';
 import {
   PaymentEvent,
   PaymentState,
@@ -136,7 +136,7 @@ const PaymentCalendar: React.FC<Props> = ({
   const activeLanguage: AppLanguage = language === 'en' ? 'en' : 'es';
   const copy = COPY[activeLanguage];
   const locale = activeLanguage === 'en' ? 'en-US' : 'es-PE';
-  const isPro = isActivePro(user);
+  const isPro = hasFullAccess(user);
   const isSyncing = Boolean(user.subscription?.isSyncing);
   const canRenderPremium = isPro;
   const [today, setToday] = useState(() => new Date());
