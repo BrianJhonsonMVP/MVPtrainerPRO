@@ -14,12 +14,12 @@ const setStorage = (key: string, data: any) => localStorage.setItem(key, JSON.st
 export const localProvider: IDBProvider = {
   name: 'Local Demo',
 
-  async signUp(email, pass) {
+  async signUp(email, pass, options) {
     const users = getStorage(KEYS.USERS);
     const newUser = {
       uid: `local_${Date.now()}`,
       email,
-      displayName: email.split('@')[0],
+      displayName: options?.displayName || email.split('@')[0],
       createdAt: new Date().toISOString(),
       subscription: {
         type: 'trial',
@@ -96,12 +96,14 @@ export const localProvider: IDBProvider = {
   async createClient(trainerId, data) { throw new Error("Not implemented"); },
   async updateClient(clientId, data) { throw new Error("Not implemented"); },
   async deleteClient(clientId) { throw new Error("Not implemented"); },
+  async getBillingRecords(trainerId: string) { return []; },
   async archiveRoutine(routineId: string) { },
   async archiveDiet(dietId: string) { },
   async saveRoutine(trainerId: string, clientId: string, routine: any) { },
   async saveDiet(trainerId: string, clientId: string, diet: any) { },
   async getRoutines(clientId: string) { return []; },
   async getDiet(clientId: string) { return null; },
+  async getDiets(clientId: string) { return []; },
 
   async getOrCreateTrainerUsage(trainerId: string) {
     const key = `local_trainer_usage_${trainerId}`;

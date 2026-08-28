@@ -147,7 +147,7 @@ export const registerUsage = (user: User, feature: string, context: any = {}): U
 
 export const shouldShowUpgradeBanner = (user: User | null, lastShownAt: number | null, now: number): boolean => {
   if (!user) return false;
-  if (isActivePro(user)) return false;
+  if (isActivePro(user) || user.subscription?.isSyncing) return false;
 
   const oneDay = 24 * 60 * 60 * 1000;
   return !lastShownAt || now - lastShownAt > oneDay;

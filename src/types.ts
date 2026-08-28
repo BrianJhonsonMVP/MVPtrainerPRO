@@ -1,6 +1,8 @@
 
 export type SubscriptionType = 'trial' | 'free' | 'pro';
 export type PlanInterval = 'monthly' | 'semiannual' | 'yearly';
+export type SubscriptionStatus = 'loading' | 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired' | 'free';
+export type SubscriptionSource = 'profiles' | 'subscriptions' | 'last_confirmed' | 'development';
 
 export type PaymentMethod = 'efectivo' | 'yape' | 'plin' | 'transferencia' | 'tarjeta' | 'otro';
 export type PaymentStatus = 'sin_registro' | 'al_dia' | 'pendiente' | 'atrasado';
@@ -17,6 +19,10 @@ export interface SubscriptionUsage {
 export interface UserSubscription {
   type: SubscriptionType;
   isActive: boolean;
+  status?: SubscriptionStatus;
+  source?: SubscriptionSource;
+  confirmedAt?: string | null;
+  isSyncing?: boolean;
   trialEndsAt?: string | null;
   expiresAt?: string | null;    // Mapeado a current_period_end de Stripe
   upgradedAt?: string | null;
@@ -78,6 +84,7 @@ export interface Routine {
   recommendations?: string[];
   source?: 'ai' | 'fallback' | 'manual';
   version?: number;
+  createdAt?: string;
 }
 
 // Added DietPlan and associated interfaces
@@ -93,6 +100,7 @@ export interface DietDay {
 }
 
 export interface DietPlan {
+  id?: string;
   title: string;
   notes?: string;
   summary?: string; // Standardized for AI
@@ -107,6 +115,7 @@ export interface DietPlan {
   recommendations?: string[];
   source?: 'ai' | 'fallback' | 'manual';
   version?: number;
+  createdAt?: string;
 }
 
 // Added ClientPaymentInfo for strict typing
@@ -118,6 +127,21 @@ export interface ClientPaymentInfo {
   nextPaymentAt: string | null;
 }
 
+export type BillingRecordStatus = 'pending' | 'paid' | 'late';
+
+export interface BillingRecord {
+  id: string;
+  clientId: string;
+  trainerId: string;
+  amount: number;
+  dueDate: string;
+  paidAt: string | null;
+  status: BillingRecordStatus;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Client {
   id: string;
   trainerId: string;
@@ -127,16 +151,21 @@ export interface Client {
   gender: 'male' | 'female' | 'other';
   age: number | null;
   country?: string;
+  medicalNotes?: string;
   avatarUrl: string;
   weight: number | null;
   height: number | null;
   experienceLevel: string;
   mainGoal: string;
   goals: string[];
+  clientGoalSummary?: string;
+  routineFocus?: string;
+  dietFocus?: string;
   trainingDays: string[];
   trainingTime: string | null;
   routines: Routine[];
   dietPlan?: DietPlan; // Fixed any to DietPlan
+  dietPlans?: DietPlan[];
   paymentInfo: ClientPaymentInfo; // Fixed inline to ClientPaymentInfo
   status: 'active' | 'inactive';
   createdAt: string;

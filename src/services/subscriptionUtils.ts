@@ -19,8 +19,27 @@ export interface PlanStatus {
 export const getPlanStatusLabel = (user: User | null): PlanStatus => {
   if (!user) return { label: 'Sin sesión', color: 'text-zinc-500', detail: 'Inicia sesión para ver tu plan', bg: 'bg-zinc-900' };
 
-  const type = user?.subscription?.type || 'free';
+  const type = user?.subscription?.type;
   const isActive = user?.subscription?.isActive;
+  const isSyncing = user?.subscription?.isSyncing;
+
+  if (isSyncing) {
+    return {
+      label: type === 'pro' && isActive ? 'Plan PRO' : 'Sincronizando tu plan…',
+      color: type === 'pro' && isActive ? 'text-mvp-gold' : 'text-zinc-300',
+      detail: 'Sincronizando tu cuenta…',
+      bg: type === 'pro' && isActive ? 'bg-mvp-gold/10' : 'bg-zinc-900'
+    };
+  }
+
+  if (!type) {
+    return {
+      label: 'Sincronizando tu plan…',
+      color: 'text-zinc-300',
+      detail: 'Sincronizando tu cuenta…',
+      bg: 'bg-zinc-900'
+    };
+  }
 
   if (type === 'pro') {
     return {

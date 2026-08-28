@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import './index.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -26,6 +27,16 @@ const safeRegisterSW = async () => {
   if (!('serviceWorker' in navigator)) return;
 
   try {
+    if ((import.meta as any).env?.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      return;
+    }
+
     const swUrl = '/sw.js';
     const swOrigin = new URL(swUrl, window.location.origin).origin;
     
@@ -39,7 +50,7 @@ const safeRegisterSW = async () => {
       window.location.hostname.includes('localhost') && window.location.port === '0'; // Algunos sandboxes
 
     if (!isSameOrigin || isPreview) {
-      console.warn("⚠️ Registro de ServiceWorker omitido: Entorno de previsualización o posible conflicto de origen detectado.", {
+      console.warn("Registro de Service Worker omitido: entorno de previsualización o conflicto de origen.", {
         hostname: window.location.hostname,
         isSameOrigin
       });
@@ -55,13 +66,12 @@ const safeRegisterSW = async () => {
     // 3. Registro final con captura de errores
     window.addEventListener('load', () => {
       navigator.serviceWorker.register(swUrl)
-        .then(reg => console.log('✅ SW registrado con éxito:', reg.scope))
         .catch(err => {
           // Si el error es de origen, no lo propagamos al thread principal
           if (err.name === 'SecurityError') {
-            console.warn('🔇 Error de seguridad al registrar SW (silenciado):', err.message);
+            console.warn('Error de seguridad al registrar Service Worker:', err.message);
           } else {
-            console.error('❌ Error al registrar SW:', err);
+            console.error('Error al registrar Service Worker:', err);
           }
         });
     });

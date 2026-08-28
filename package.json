@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "check:mojibake": "node scripts/check-mojibake.mjs",
     "lint": "tsc --noEmit",
+    "test:premium": "tsx scripts/verify-premium-stability.ts",
     "start": "node dist/server.cjs",
     "preview": "vite preview"
   },
@@ -21,7 +23,6 @@
     "express": "^5.2.1",
     "firebase": "^12.6.0",
     "framer-motion": "^12.39.0",
-    "jspdf": "latest",
     "lucide-react": "^0.555.0",
     "motion": "^12.39.0",
     "react": "^19.2.0",
@@ -32,6 +33,9 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

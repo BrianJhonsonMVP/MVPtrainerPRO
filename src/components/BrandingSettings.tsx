@@ -1,69 +1,181 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrandingConfig, User } from '../types';
-import { Palette, Crown, Lock, Save, LayoutTemplate, Image as ImageIcon, RotateCcw } from 'lucide-react';
+import { CheckCircle2, Crown, ImagePlus, Loader2, Palette, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
 import { dbProvider } from '../data';
-import { applyBrandingToTheme, DEFAULT_BRANDING } from '../services/brandingService';
+import {
+  applyBrandingToTheme,
+  DEFAULT_BRANDING,
+  getContrastRatio,
+  getContrastTextColor,
+  normalizeBrandingConfig
+} from '../services/brandingService';
+import { uploadTrainerAsset } from '../services/trainerAssetService';
 import { isActivePro } from '../services/subscriptionLogic';
+import PremiumLockOverlay from './PremiumLockOverlay';
+
+type AppLanguage = 'es' | 'en';
+
+const COPY = {
+  es: {
+    confirmTitle: 'Restaurar marca',
+    confirmMessage: 'Se restauraran el nombre, logo y colores originales de MVP Trainer.',
+    title: 'Personalizacion de marca',
+    subtitle: 'Tu identidad se vera en la cabecera, pagina publica e imagenes para compartir.',
+    brandName: 'Nombre de tu marca',
+    brandPlaceholder: 'Ej: Bravo Fit Trainer',
+    logo: 'Logo de tu marca',
+    uploadLogo: 'Subir logo',
+    replaceLogo: 'Cambiar logo',
+    uploadHint: 'JPG, PNG o WebP. Maximo 5 MB.',
+    appColors: 'Colores de marca',
+    primary: 'Color principal',
+    secondary: 'Fondo de marca',
+    preview: 'Asi se vera',
+    sampleButton: 'Reservar asesoria',
+    contrastGood: 'Contraste legible',
+    contrastBad: 'Elige un color con mayor contraste',
+    saving: 'Guardando...',
+    uploading: 'Subiendo...',
+    apply: 'Aplicar cambios',
+    upToDate: 'Todo actualizado',
+    pending: 'Cambios pendientes',
+    saved: 'Marca aplicada correctamente.',
+    uploaded: 'Logo cargado. Aplica los cambios para publicarlo.',
+    removeLogo: 'Quitar logo',
+    resetTitle: 'Restaurar marca original',
+    lockedTitle: 'Personalizacion bloqueada',
+    lockedDescription: 'Sube tu logo y adapta la identidad visual para presentar una experiencia profesional.',
+    lockedCta: 'Desbloquear Branding PRO'
+  },
+  en: {
+    confirmTitle: 'Restore brand',
+    confirmMessage: 'Your brand name, logo, and colors will return to the MVP Trainer defaults.',
+    title: 'Brand customization',
+    subtitle: 'Your identity appears in the header, public page, and share images.',
+    brandName: 'Brand name',
+    brandPlaceholder: 'Example: Bravo Fit Trainer',
+    logo: 'Brand logo',
+    uploadLogo: 'Upload logo',
+    replaceLogo: 'Replace logo',
+    uploadHint: 'JPG, PNG, or WebP. Maximum 5 MB.',
+    appColors: 'Brand colors',
+    primary: 'Primary color',
+    secondary: 'Brand background',
+    preview: 'How it will look',
+    sampleButton: 'Book coaching',
+    contrastGood: 'Readable contrast',
+    contrastBad: 'Choose a color with stronger contrast',
+    saving: 'Saving...',
+    uploading: 'Uploading...',
+    apply: 'Apply changes',
+    upToDate: 'Everything is up to date',
+    pending: 'Unsaved changes',
+    saved: 'Brand applied successfully.',
+    uploaded: 'Logo uploaded. Apply the changes to publish it.',
+    removeLogo: 'Remove logo',
+    resetTitle: 'Restore original brand',
+    lockedTitle: 'Branding locked',
+    lockedDescription: 'Upload your logo and customize the visual identity for a professional client experience.',
+    lockedCta: 'Unlock Branding PRO'
+  }
+};
 
 interface BrandingSettingsProps {
   user: User;
   onUpdateUser: (user: User) => void;
   onShowPaywall: () => void;
   requestConfirm: (config: any) => void;
+  language?: AppLanguage;
 }
 
-const BrandingSettings: React.FC<BrandingSettingsProps> = ({ user, onUpdateUser, onShowPaywall, requestConfirm }) => {
+const BrandingSettings: React.FC<BrandingSettingsProps> = ({
+  user,
+  onUpdateUser,
+  onShowPaywall,
+  requestConfirm,
+  language = 'es'
+}) => {
+  const copy = COPY[language];
   const isPro = isActivePro(user);
-
-  const [config, setConfig] = useState<BrandingConfig>({
-    brandName: user.branding?.brandName || '',
-    logoUrl: user.branding?.logoUrl || '',
-    primaryColor: user.branding?.primaryColor || DEFAULT_BRANDING.primaryColor,
-    secondaryColor: user.branding?.secondaryColor || DEFAULT_BRANDING.secondaryColor,
-  });
-
+  const savedConfig = useMemo(() => normalizeBrandingConfig(user.branding), [
+    user.branding?.brandName,
+    user.branding?.logoUrl,
+    user.branding?.primaryColor,
+    user.branding?.secondaryColor
+  ]);
+  const [config, setConfig] = useState<BrandingConfig>(savedConfig);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isPro) {
-      applyBrandingToTheme(config);
+    setConfig(savedConfig);
+  }, [savedConfig]);
+
+  const normalizedConfig = useMemo(() => normalizeBrandingConfig(config), [config]);
+  const isDirty = JSON.stringify(normalizedConfig) !== JSON.stringify(savedConfig);
+  const visibleBrandName = config.brandName.trim() || user.displayName || DEFAULT_BRANDING.brandName;
+
+  const previewTextColor = getContrastTextColor(config.primaryColor);
+  const contrastRatio = getContrastRatio(config.primaryColor, previewTextColor);
+  const contrastIsGood = contrastRatio >= 4.5;
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!isPro) return onShowPaywall();
+
+    setUploadingLogo(true);
+    setError('');
+    try {
+      const logoUrl = await uploadTrainerAsset(user.uid, 'brand-logo', file);
+      setConfig(current => ({ ...current, logoUrl }));
+      setFeedback({ type: 'info', message: copy.uploaded });
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'No se pudo subir el logo.');
+    } finally {
+      setUploadingLogo(false);
     }
-  }, [config, isPro]);
+  };
 
   const handleSave = async () => {
-    if (!isPro) {
-      onShowPaywall();
-      return;
-    }
-
+    if (!isPro) return onShowPaywall();
     setSaving(true);
+    setError('');
+    setFeedback(null);
     try {
-      await dbProvider.updateUser(user.uid, { branding: config });
-      onUpdateUser({ ...user, branding: config });
-    } catch (error) {
-      console.error('Error saving branding', error);
+      await dbProvider.updateUser(user.uid, { branding: normalizedConfig });
+      applyBrandingToTheme(normalizedConfig);
+      onUpdateUser({ ...user, branding: normalizedConfig });
+      setFeedback({ type: 'success', message: copy.saved });
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'No se pudieron guardar los cambios.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleReset = async () => {
-    if (!isPro) {
-      onShowPaywall();
-      return;
-    }
-
+  const handleReset = () => {
+    if (!isPro) return onShowPaywall();
     requestConfirm({
-      title: '¿Restaurar marca?',
-      message: '¿Estás seguro de que deseas restaurar los colores y el nombre originales de la aplicación?',
+      title: copy.confirmTitle,
+      message: copy.confirmMessage,
       type: 'warning',
       onConfirm: async () => {
-        setConfig(DEFAULT_BRANDING);
         setSaving(true);
         try {
           await dbProvider.updateUser(user.uid, { branding: DEFAULT_BRANDING });
-          onUpdateUser({ ...user, branding: DEFAULT_BRANDING });
-          applyBrandingToTheme(DEFAULT_BRANDING);
+          const defaultConfig = normalizeBrandingConfig(DEFAULT_BRANDING);
+          setConfig(defaultConfig);
+          applyBrandingToTheme(defaultConfig);
+          onUpdateUser({ ...user, branding: defaultConfig });
+          setError('');
+          setFeedback({ type: 'success', message: copy.saved });
+        } catch (resetError) {
+          setError(resetError instanceof Error ? resetError.message : 'No se pudo restaurar la marca.');
         } finally {
           setSaving(false);
         }
@@ -72,132 +184,152 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({ user, onUpdateUser,
   };
 
   return (
-    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 relative overflow-hidden animate-fadeIn">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-mvp-gold/20 p-2 rounded-lg text-mvp-gold">
-          <Palette size={24} />
-        </div>
+    <section className="relative min-h-[480px] overflow-hidden rounded-lg border border-zinc-800 bg-[#11141d] p-5 sm:p-6">
+      <header className="mb-6 flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-violet-400/20 bg-violet-500/10 text-violet-300">
+          <Palette size={21} />
+        </span>
         <div>
-          <h3 className="font-bold text-white text-lg">Personalización de Marca</h3>
-          <p className="text-zinc-500 text-sm">Adapta la app a tu identidad visual.</p>
+          <h3 className="text-lg font-black text-white">{copy.title}</h3>
+          <p className="text-sm text-zinc-500">{copy.subtitle}</p>
         </div>
         {isPro && (
-          <div className="ml-auto bg-mvp-gold/20 text-mvp-gold px-2 py-1 rounded text-xs font-bold border border-mvp-gold/30 uppercase tracking-wider flex items-center gap-1">
-            <Crown size={12}/> PRO
-          </div>
+          <span className="ml-auto flex items-center gap-1 rounded-md border border-violet-400/25 bg-violet-500/10 px-2 py-1 text-xs font-bold text-violet-300">
+            <Crown size={12} /> PRO
+          </span>
         )}
-      </div>
+      </header>
 
-      <div className={`space-y-6 relative ${!isPro ? 'opacity-50 pointer-events-none filter blur-[1px]' : ''}`}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className={`space-y-6 ${!isPro ? 'pro-locked-content' : ''}`}>
+        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
+          <label className="block">
+            <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.brandName}</span>
+            <input
+              value={config.brandName}
+              onChange={event => {
+                setConfig({ ...config, brandName: event.target.value });
+                setFeedback(null);
+              }}
+              placeholder={copy.brandPlaceholder}
+              className="w-full rounded-lg border border-zinc-700 bg-black px-4 py-3 text-white outline-none transition-colors focus:border-violet-400"
+            />
+          </label>
+
           <div>
-            <label className="text-xs text-zinc-500 font-bold uppercase mb-2 block">Nombre de tu Marca</label>
-            <div className="relative">
-              <LayoutTemplate className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/>
-              <input
-                type="text"
-                value={config.brandName}
-                onChange={(e) => setConfig({...config, brandName: e.target.value})}
-                placeholder="Ej: Bravo Fit Trainer"
-                className="w-full bg-black border border-zinc-700 text-white rounded-xl pl-10 pr-4 py-3 focus:border-mvp-gold outline-none"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-zinc-500 font-bold uppercase mb-2 block">Logo URL (Imagen)</label>
-            <div className="relative">
-              <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/>
-              <input
-                type="text"
-                value={config.logoUrl}
-                onChange={(e) => setConfig({...config, logoUrl: e.target.value})}
-                placeholder="https://..."
-                className="w-full bg-black border border-zinc-700 text-white rounded-xl pl-10 pr-4 py-3 focus:border-mvp-gold outline-none"
-              />
-            </div>
+            <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.logo}</span>
+            <button
+              type="button"
+              data-testid="brand-logo-upload"
+              onClick={() => logoInputRef.current?.click()}
+              disabled={uploadingLogo}
+              className="flex min-h-[112px] w-full cursor-pointer items-center gap-3 rounded-lg border border-dashed border-zinc-700 bg-black/40 p-3 text-left transition-colors hover:border-violet-400/60 disabled:cursor-wait disabled:opacity-70"
+            >
+              {config.logoUrl ? (
+                <img src={config.logoUrl} alt="" className="h-16 w-16 shrink-0 rounded-lg border border-zinc-700 object-contain" />
+              ) : (
+                <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-zinc-500">
+                  {uploadingLogo ? <Loader2 size={24} className="animate-spin" /> : <ImagePlus size={24} />}
+                </span>
+              )}
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-white">{uploadingLogo ? copy.uploading : config.logoUrl ? copy.replaceLogo : copy.uploadLogo}</span>
+                <span className="mt-1 block text-xs text-zinc-500">{copy.uploadHint}</span>
+              </span>
+            </button>
+            <input ref={logoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} disabled={uploadingLogo} />
+            {config.logoUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfig(current => ({ ...current, logoUrl: '' }));
+                  setFeedback(null);
+                }}
+                className="mt-2 flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-red-300"
+              >
+                <Trash2 size={13} /> {copy.removeLogo}
+              </button>
+            )}
           </div>
         </div>
 
         <div>
-          <label className="text-xs text-zinc-500 font-bold uppercase mb-3 block">Colores de la App</label>
-          <div className="flex gap-6 items-center bg-black/40 p-4 rounded-xl border border-zinc-800">
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-zinc-700 cursor-pointer relative group">
+          <span className="mb-3 block text-xs font-bold uppercase text-zinc-500">{copy.appColors}</span>
+          <div className="grid gap-4 rounded-lg border border-zinc-800 bg-black/35 p-4 sm:grid-cols-[auto_auto_minmax(220px,1fr)] sm:items-center">
+            {([
+              ['primaryColor', copy.primary],
+              ['secondaryColor', copy.secondary]
+            ] as const).map(([key, label]) => (
+              <label key={key} className="flex cursor-pointer items-center gap-3">
+                <span className="h-11 w-11 rounded-lg border border-zinc-600" style={{ backgroundColor: config[key] }} />
+                <span>
+                  <span className="block text-xs font-bold text-zinc-300">{label}</span>
+                  <span className="font-mono text-[11px] uppercase text-zinc-600">{config[key]}</span>
+                </span>
                 <input
                   type="color"
-                  value={config.primaryColor}
-                  onChange={(e) => setConfig({...config, primaryColor: e.target.value})}
-                  className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 p-0 m-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                  value={config[key]}
+                  onChange={event => {
+                    setConfig({ ...config, [key]: event.target.value });
+                    setFeedback(null);
+                  }}
+                  className="sr-only"
                 />
-                <div className="w-full h-full" style={{ backgroundColor: config.primaryColor }} />
+              </label>
+            ))}
+
+            <div className="border-t border-zinc-800 pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+              <span className="mb-2 block text-[11px] font-bold uppercase text-zinc-600">{copy.preview}</span>
+              <div className="overflow-hidden rounded-lg border border-white/10" style={{ backgroundColor: config.secondaryColor, color: getContrastTextColor(config.secondaryColor) }}>
+                <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2.5">
+                  {config.logoUrl ? (
+                    <img src={config.logoUrl} alt="" className="h-7 w-7 rounded-md bg-white/10 object-contain" />
+                  ) : (
+                    <span className="flex h-7 w-7 items-center justify-center rounded-md border border-white/15"><Sparkles size={14} /></span>
+                  )}
+                  <span className="min-w-0 truncate text-xs font-black">{visibleBrandName}</span>
+                </div>
+                <div className="p-3">
+                  <button type="button" className="w-full rounded-lg px-4 py-3 text-sm font-black shadow-lg" style={{ backgroundColor: config.primaryColor, color: previewTextColor }}>
+                    {copy.sampleButton}
+                  </button>
+                </div>
               </div>
-              <span className="text-[10px] text-zinc-400 uppercase font-mono">Primario</span>
-            </div>
-
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-zinc-700 cursor-pointer relative group">
-                <input
-                  type="color"
-                  value={config.secondaryColor}
-                  onChange={(e) => setConfig({...config, secondaryColor: e.target.value})}
-                  className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 p-0 m-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-                />
-                <div className="w-full h-full" style={{ backgroundColor: config.secondaryColor }} />
-              </div>
-              <span className="text-[10px] text-zinc-400 uppercase font-mono">Secundario</span>
-            </div>
-
-            <div className="h-8 w-px bg-zinc-700 mx-2"></div>
-
-            <div className="flex-1">
-              <span className="text-[10px] text-zinc-500 block mb-2">Vista Previa Botón</span>
-              <button
-                className="px-4 py-2 rounded-lg text-xs font-bold text-black shadow-lg"
-                style={{ background: `linear-gradient(to right, ${config.primaryColor}, ${config.secondaryColor})` }}
-              >
-                Botón de Ejemplo
-              </button>
+              <span className={`mt-2 block text-xs ${contrastIsGood ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {contrastIsGood ? copy.contrastGood : copy.contrastBad} ({contrastRatio.toFixed(1)}:1)
+              </span>
             </div>
           </div>
         </div>
 
-        <div className="flex gap-3 pt-2">
+        <div aria-live="polite">
+          {error && <p role="alert" className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
+          {!error && feedback && (
+            <p className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${feedback.type === 'success' ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-violet-400/25 bg-violet-500/10 text-violet-200'}`}>
+              {feedback.type === 'success' ? <CheckCircle2 size={16} /> : <ImagePlus size={16} />}
+              {feedback.message}
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3">
           <button
             onClick={handleSave}
-            disabled={saving}
-            className="flex-1 bg-zinc-100 hover:bg-white text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+            disabled={saving || uploadingLogo || !isDirty}
+            className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg px-4 font-black transition-[filter,opacity] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+            style={{ backgroundColor: config.primaryColor, color: previewTextColor }}
           >
-            <Save size={18}/> {saving ? 'Guardando...' : 'Aplicar Cambios'}
+            {saving ? <Loader2 size={18} className="animate-spin" /> : isDirty ? <Save size={18} /> : <CheckCircle2 size={18} />}
+            {saving ? copy.saving : isDirty ? copy.apply : copy.upToDate}
           </button>
-          <button
-            onClick={handleReset}
-            disabled={saving}
-            className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-xl transition-colors"
-            title="Restaurar valores originales"
-          >
+          <button onClick={handleReset} disabled={saving} className="flex h-12 w-12 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-white" title={copy.resetTitle} aria-label={copy.resetTitle}>
             <RotateCcw size={18} />
           </button>
         </div>
+        {isDirty && !feedback && <p className="text-center text-xs font-bold text-amber-300">{copy.pending}</p>}
       </div>
 
-      {!isPro && (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center text-center p-6 animate-fadeIn">
-          <div className="bg-mvp-gold text-black p-4 rounded-full mb-4 shadow-[0_0_20px_rgba(245,158,11,0.4)]">
-            <Lock size={32} />
-          </div>
-          <h3 className="text-2xl font-bold text-white mb-2">Personalización Bloqueada</h3>
-          <p className="text-zinc-300 max-w-sm mb-6 text-sm">
-            Sube tu logo, cambia los colores de la app y define el nombre de tu marca para una experiencia 100% profesional.
-          </p>
-          <button
-            onClick={onShowPaywall}
-            className="bg-gradient-to-r from-mvp-gold to-orange-500 hover:opacity-90 text-white font-bold py-3 px-8 rounded-xl shadow-lg transform hover:scale-105 transition-all"
-          >
-            Desbloquear Branding PRO
-          </button>
-        </div>
-      )}
-    </div>
+      {!isPro && <PremiumLockOverlay title={copy.lockedTitle} description={copy.lockedDescription} cta={copy.lockedCta} onUnlock={onShowPaywall} />}
+    </section>
   );
 };
 
