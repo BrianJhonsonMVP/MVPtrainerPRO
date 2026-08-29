@@ -125,6 +125,8 @@ export interface ClientPaymentInfo {
   status: PaymentStatus;
   lastPaidAt: string | null;
   nextPaymentAt: string | null;
+  lastPaymentAmount?: number | null;
+  lastPaymentMonths?: number | null;
 }
 
 export type BillingRecordStatus = 'pending' | 'paid' | 'late';
@@ -167,7 +169,9 @@ export interface Client {
   dietPlan?: DietPlan; // Fixed any to DietPlan
   dietPlans?: DietPlan[];
   paymentInfo: ClientPaymentInfo; // Fixed inline to ClientPaymentInfo
-  status: 'active' | 'inactive';
+  status: 'active' | 'paused' | 'inactive';
+  pausedAt?: string | null;
+  finishedAt?: string | null;
   createdAt: string;
 }
 

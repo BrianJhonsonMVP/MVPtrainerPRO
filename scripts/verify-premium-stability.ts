@@ -16,8 +16,11 @@ import { getDaySchedule } from '../src/services/scheduleService';
 import {
   buildPaymentEventsForMonth,
   getMonthlyPaymentSummary,
-  markPaymentPaid
+  markPaymentPaid,
+  markPaymentPending
 } from '../src/services/paymentService';
+import { pauseClientService, reactivateClientService, finishClientService } from '../src/services/clientService';
+import { isActiveClient } from '../src/services/scheduleService';
 
 const confirmedAt = new Date('2026-07-27T17:00:00.000Z');
 const proSubscription = resolveSubscriptionEntitlements(
@@ -207,6 +210,34 @@ assert.equal(paid.status, 'al_dia');
 assert.ok(paid.lastPaidAt);
 assert.ok(paid.nextPaymentAt && new Date(paid.nextPaymentAt) > confirmedAt);
 
+const threeMonthPayment = markPaymentPaid(
+  { ...makeClient({}).paymentInfo, monthlyFee: 200, nextPaymentAt: null },
+  new Date('2026-01-31T12:00:00.000Z'),
+  3
+);
+assert.equal(threeMonthPayment.lastPaymentAmount, 600);
+assert.equal(threeMonthPayment.lastPaymentMonths, 3);
+assert.equal(threeMonthPayment.nextPaymentAt?.slice(0, 10), '2026-04-30', 'Month-end coverage must remain on the last valid calendar day.');
+
+const serviceClient = makeClient({
+  paymentInfo: {
+    ...makeClient({}).paymentInfo,
+    status: 'al_dia',
+    nextPaymentAt: '2026-08-10T12:00:00.000Z'
+  }
+});
+const pausedPatch = pauseClientService(serviceClient, new Date('2026-08-01T12:00:00.000Z'));
+const pausedClient = { ...serviceClient, ...pausedPatch } as Client;
+assert.equal(pausedClient.status, 'paused');
+assert.equal(isActiveClient(pausedClient), false);
+const reactivatedPatch = reactivateClientService(pausedClient, new Date('2026-08-11T12:00:00.000Z'));
+assert.equal(reactivatedPatch.status, 'active');
+assert.equal(reactivatedPatch.paymentInfo?.nextPaymentAt?.slice(0, 10), '2026-08-20');
+assert.equal(finishClientService(serviceClient).status, 'inactive');
+const pendingTomorrow = markPaymentPending(serviceClient.paymentInfo, new Date('2026-08-11T12:00:00.000Z'));
+assert.equal(pendingTomorrow.status, 'pendiente');
+assert.equal(pendingTomorrow.nextPaymentAt?.slice(0, 10), '2026-08-12');
+
 console.log(JSON.stringify({
   premium: 'stable',
   freeIsolation: 'passed',
@@ -216,5 +247,11 @@ console.log(JSON.stringify({
     collected: paymentSummary.collected,
     pending: paymentSummary.pending,
     overdue: paymentSummary.overdue
+  },
+  simpleOperations: {
+    multiMonthPayment: 'passed',
+    pauseAndReactivate: 'passed',
+    finishWithHistory: 'passed',
+    payTomorrow: 'passed'
   }
 }));

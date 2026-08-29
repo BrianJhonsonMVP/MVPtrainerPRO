@@ -294,17 +294,51 @@ export const getMonthlyPaymentSummary = (
   };
 };
 
-export const markPaymentPaid = (payment: ClientPaymentInfo, paidAt = new Date()): ClientPaymentInfo => {
+const addCalendarMonthsClamped = (date: Date, months: number) => {
+  const result = new Date(date);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(originalDay, lastDay));
+  return result;
+};
+
+export const markPaymentPaid = (
+  payment: ClientPaymentInfo,
+  paidAt = new Date(),
+  coverageMonths = 1
+): ClientPaymentInfo => {
+  const months = Math.max(1, Math.min(12, Math.round(coverageMonths)));
   const currentDue = parsePaymentDate(payment.nextPaymentAt);
-  let nextPayment = currentDue && currentDue.getTime() > paidAt.getTime() ? new Date(currentDue) : new Date(paidAt);
-  nextPayment.setMonth(nextPayment.getMonth() + 1);
-  while (nextPayment.getTime() <= paidAt.getTime()) nextPayment.setMonth(nextPayment.getMonth() + 1);
+  const coverageStart = currentDue && startOfDay(currentDue).getTime() > startOfDay(paidAt).getTime()
+    ? currentDue
+    : paidAt;
+  const nextPayment = addCalendarMonthsClamped(coverageStart, months);
 
   return {
     ...payment,
     status: 'al_dia',
     lastPaidAt: paidAt.toISOString(),
-    nextPaymentAt: nextPayment.toISOString()
+    nextPaymentAt: nextPayment.toISOString(),
+    lastPaymentAmount: (Number(payment.monthlyFee) || 0) * months,
+    lastPaymentMonths: months
+  };
+};
+
+export const markPaymentOverdue = (payment: ClientPaymentInfo, today = new Date()): ClientPaymentInfo => ({
+  ...payment,
+  status: 'atrasado',
+  nextPaymentAt: payment.nextPaymentAt || today.toISOString()
+});
+
+export const markPaymentPending = (payment: ClientPaymentInfo, today = new Date(), days = 1): ClientPaymentInfo => {
+  const dueDate = startOfDay(today);
+  dueDate.setDate(dueDate.getDate() + Math.max(0, Math.round(days)));
+  return {
+    ...payment,
+    status: 'pendiente',
+    nextPaymentAt: dueDate.toISOString()
   };
 };
 

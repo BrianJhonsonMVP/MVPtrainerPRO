@@ -6,7 +6,7 @@ import {
   Users, Activity, Dumbbell, Crown, ChevronRight, Menu, X, 
   Sparkles, Loader2, AlertCircle, DollarSign, 
   Edit2, Save, User as UserIcon, Clock, Trash2, Banknote, 
-  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square
+  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square, Pause, Play, UserX
 } from 'lucide-react';
 import { BillingRecord, Client, Routine, User as AppUser, DietPlan, ClientPaymentInfo, PlanInterval, UserSubscription } from './types';
 import { generateWorkoutRoutine, generateDietPlan, getLastGeminiErrorMessage } from './services/geminiService';
@@ -35,6 +35,7 @@ import PaymentCalendar from './components/PaymentCalendar';
 import TrainerLandingEditor from './components/TrainerLandingEditor';
 import TrainerPublicPage from './components/TrainerPublicPage';
 import PrioritySessionCard from './components/PrioritySessionCard';
+import QuickPaymentDialog from './components/QuickPaymentDialog';
 import { COUNTRIES } from './data/countries';
 import {
   formatSessionCountdown,
@@ -48,9 +49,12 @@ import {
   getPaymentBadgeClass,
   getPaymentDiffDays,
   getPaymentLabel,
-  markPaymentPaid,
+  formatMoney,
+  markPaymentOverdue,
+  markPaymentPending,
   needsPaymentAttention
 } from './services/paymentService';
+import { finishClientService, pauseClientService, reactivateClientService } from './services/clientService';
 
 // --- HELPERS ---
 const VERBOSE_APP_LOGS = false;
@@ -958,17 +962,17 @@ const CLIENT_DETAIL_COPY = {
         monthlyFee: 'Mensualidad',
         status: 'Estado',
         payment: 'Pago',
-        next: 'Proximo',
+        next: 'Cubierto hasta',
         lastPayment: 'Ultimo pago',
-        nextCharge: 'Proximo cobro',
+        nextCharge: 'Cubierto hasta',
         pending: 'Pendiente',
         noRecord: 'Sin registro',
         paidUp: 'Al dia',
         late: 'Atrasado',
-        markPaidToday: 'Marcar como pagado hoy',
+        markPaidToday: 'Registrar pago',
         paymentRegisteredTitle: 'Pago registrado',
-        paymentRegisteredMessage: 'Cliente al dia por 1 mes mas.',
-        manualSettings: 'Ajustes manuales',
+        paymentRegisteredMessage: 'El nuevo periodo ya quedó registrado.',
+        manualSettings: 'Ajustes avanzados',
         paymentAmount: 'Monto de mensualidad',
         method: 'Metodo',
         cash: 'Efectivo',
@@ -1070,17 +1074,17 @@ const CLIENT_DETAIL_COPY = {
         monthlyFee: 'Monthly fee',
         status: 'Status',
         payment: 'Payment',
-        next: 'Next',
+        next: 'Covered until',
         lastPayment: 'Last payment',
-        nextCharge: 'Next charge',
+        nextCharge: 'Covered until',
         pending: 'Pending',
         noRecord: 'No record',
         paidUp: 'Paid up',
         late: 'Late',
-        markPaidToday: 'Mark as paid today',
+        markPaidToday: 'Register payment',
         paymentRegisteredTitle: 'Payment registered',
-        paymentRegisteredMessage: 'Client is paid up for 1 more month.',
-        manualSettings: 'Manual settings',
+        paymentRegisteredMessage: 'The new coverage period is now registered.',
+        manualSettings: 'Advanced settings',
         paymentAmount: 'Monthly fee amount',
         method: 'Method',
         cash: 'Cash',
@@ -2533,9 +2537,12 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
         status: client.paymentInfo?.status || 'sin_registro',
         paymentMethod: client.paymentInfo?.paymentMethod || 'efectivo',
         lastPaidAt: client.paymentInfo?.lastPaidAt || '',
-        nextPaymentAt: client.paymentInfo?.nextPaymentAt || ''
+        nextPaymentAt: client.paymentInfo?.nextPaymentAt || '',
+        lastPaymentAmount: client.paymentInfo?.lastPaymentAmount || null,
+        lastPaymentMonths: client.paymentInfo?.lastPaymentMonths || null
     });
     const [isSavingPayment, setIsSavingPayment] = useState(false);
+    const [isQuickPaymentOpen, setIsQuickPaymentOpen] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -2561,7 +2568,9 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
             status: client.paymentInfo.status || 'sin_registro',
             paymentMethod: client.paymentInfo.paymentMethod || 'efectivo',
             lastPaidAt: client.paymentInfo.lastPaidAt || '',
-            nextPaymentAt: client.paymentInfo.nextPaymentAt || ''
+            nextPaymentAt: client.paymentInfo.nextPaymentAt || '',
+            lastPaymentAmount: client.paymentInfo.lastPaymentAmount || null,
+            lastPaymentMonths: client.paymentInfo.lastPaymentMonths || null
         });
         
         // Parse training time range: "07:00 AM - 08:30 AM"
@@ -2726,6 +2735,70 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
         }
     };
 
+    const saveQuickPayment = async (updated: ClientPaymentInfo) => {
+        setIsSavingPayment(true);
+        try {
+            setPaymentForm(updated);
+            await onUpdate({ paymentInfo: updated });
+            setIsQuickPaymentOpen(false);
+            onShowToast({ title: detailCopy.paymentRegisteredTitle, message: detailCopy.paymentRegisteredMessage, type: 'success' });
+        } finally {
+            setIsSavingPayment(false);
+        }
+    };
+
+    const markAsUnpaid = async () => {
+        const updated = markPaymentOverdue(paymentForm);
+        setIsSavingPayment(true);
+        try {
+            setPaymentForm(updated);
+            await onUpdate({ paymentInfo: updated });
+            onShowToast({
+                title: language === 'en' ? 'Payment needs attention' : 'Pago por atender',
+                message: language === 'en' ? 'The client now appears as overdue.' : 'El cliente ahora aparece como vencido.',
+                type: 'warning'
+            });
+        } finally {
+            setIsSavingPayment(false);
+        }
+    };
+
+    const markAsPendingTomorrow = async () => {
+        const updated = markPaymentPending(paymentForm);
+        setIsSavingPayment(true);
+        try {
+            setPaymentForm(updated);
+            await onUpdate({ paymentInfo: updated });
+            onShowToast({
+                title: language === 'en' ? 'Payment scheduled' : 'Pago agendado',
+                message: language === 'en' ? 'It will appear as pending for tomorrow.' : 'Aparecerá como pendiente para mañana.',
+                type: 'success'
+            });
+        } finally {
+            setIsSavingPayment(false);
+        }
+    };
+
+    const pauseService = async () => {
+        await onUpdate(pauseClientService(client));
+        onShowToast({ title: language === 'en' ? 'Client paused' : 'Cliente pausado', message: language === 'en' ? 'Schedule and payment alerts were paused.' : 'Se pausaron la agenda y los avisos de pago.', type: 'success' });
+    };
+
+    const reactivateService = async () => {
+        await onUpdate(reactivateClientService(client));
+        onShowToast({ title: language === 'en' ? 'Client reactivated' : 'Cliente reactivado', message: language === 'en' ? 'The client is active again.' : 'El cliente vuelve a estar activo.', type: 'success' });
+    };
+
+    const finishService = () => requestConfirm({
+        title: language === 'en' ? 'Finish client service?' : '¿Finalizar servicio del cliente?',
+        message: language === 'en' ? 'The client will leave the active agenda, but their history will be kept.' : 'Saldrá de la agenda activa, pero su historial se conservará.',
+        type: 'warning',
+        onConfirm: async () => {
+            await onUpdate(finishClientService(client));
+            onShowToast({ title: language === 'en' ? 'Service finished' : 'Servicio finalizado', message: language === 'en' ? 'The history remains available.' : 'El historial permanece disponible.', type: 'success' });
+        }
+    });
+
     const handleGeneratePaymentMessage = () => {
         const cleanPhone = normalizeWhatsAppPhone(client.phone);
         if (!cleanPhone) {
@@ -2764,25 +2837,38 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
     const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
     return (
         <div className="client-detail-page flex flex-col h-full">
+            {isQuickPaymentOpen && (
+                <QuickPaymentDialog
+                    clientName={client.name}
+                    country={client.country}
+                    payment={paymentForm}
+                    language={language}
+                    saving={isSavingPayment}
+                    onClose={() => setIsQuickPaymentOpen(false)}
+                    onConfirm={saveQuickPayment}
+                />
+            )}
             {/* Header Cliente */}
-            <div className="client-detail-header flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
+            <div className="client-detail-header mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                     <button onClick={onBack} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><ChevronRight className="rotate-180"/></button>
                     <img src={client.avatarUrl} alt="" className="client-detail-avatar w-14 h-14 rounded-full border border-mvp-gold object-cover" />
-                    <div>
+                    <div className="min-w-0">
                         <h2 className="text-xl font-bold text-white">{client.name}</h2>
-                        <span className="text-xs text-mvp-gold bg-mvp-gold/10 px-2 py-0.5 rounded border border-mvp-gold/20">{goalLabel(client.mainGoal || '', language)}</span>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-mvp-gold bg-mvp-gold/10 px-2 py-0.5 rounded border border-mvp-gold/20">{goalLabel(client.mainGoal || '', language)}</span>
+                          {client.status !== 'active' && <span className={`rounded border px-2 py-0.5 text-[10px] font-black uppercase ${client.status === 'paused' ? 'border-amber-500/25 bg-amber-500/10 text-amber-300' : 'border-zinc-700 bg-zinc-800 text-zinc-400'}`}>{client.status === 'paused' ? (language === 'en' ? 'Paused' : 'Pausado') : (language === 'en' ? 'Finished' : 'Finalizado')}</span>}
+                        </div>
                     </div>
                 </div>
-                <button 
-                  onClick={() => {
-                    appLog("Trash icon clicked in ClientDetail");
-                    onDelete();
-                  }} 
-                  className="relative z-50 text-red-500 p-2 hover:bg-red-500/10 rounded-full bg-zinc-900 shadow-sm border border-zinc-800"
-                >
-                  <Trash2 size={18}/>
-                </button>
+                <div className="flex items-center justify-end gap-2">
+                  {client.status === 'active' ? (
+                    <button type="button" onClick={pauseService} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 text-xs font-black text-amber-300" title={language === 'en' ? 'Pause client' : 'Pausar cliente'}><Pause size={16} /><span className="hidden sm:inline">{language === 'en' ? 'Pause' : 'Pausar'}</span></button>
+                  ) : (
+                    <button type="button" onClick={reactivateService} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 text-xs font-black text-emerald-300" title={language === 'en' ? 'Reactivate client' : 'Reactivar cliente'}><Play size={16} /><span className="hidden sm:inline">{language === 'en' ? 'Reactivate' : 'Reactivar'}</span></button>
+                  )}
+                  {client.status !== 'inactive' && <button type="button" onClick={finishService} className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-red-500/30 hover:text-red-300" title={language === 'en' ? 'Finish service' : 'Finalizar servicio'} aria-label={language === 'en' ? 'Finish service' : 'Finalizar servicio'}><UserX size={17} /></button>}
+                </div>
             </div>
 
             {/* Tabs */}
@@ -3308,7 +3394,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                 </div>
                                 <div className="md:text-right">
                                     <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500 mb-1 block">{detailCopy.monthlyFee}</span>
-                                    <p className="text-3xl font-black text-white">${paymentForm.monthlyFee}</p>
+                                    <p className="text-3xl font-black text-white">{formatMoney(paymentForm.monthlyFee, client.country, language)}</p>
                                 </div>
                             </div>
                             <div className="mt-6 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2 text-center">
@@ -3350,17 +3436,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                         {/* Action Buttons */}
                         <ButtonGroup className="items-stretch plan-action-group">
                             <AppButton
-                                onClick={async () => {
-                                    const updated = markPaymentPaid(paymentForm);
-                                    setIsSavingPayment(true);
-                                    try {
-                                        setPaymentForm(updated);
-                                        await onUpdate({ paymentInfo: updated });
-                                        onShowToast({ title: detailCopy.paymentRegisteredTitle, message: detailCopy.paymentRegisteredMessage, type: 'success' });
-                                    } finally {
-                                        setIsSavingPayment(false);
-                                    }
-                                }}
+                                onClick={() => setIsQuickPaymentOpen(true)}
                                 variant="success"
                                 isLoading={isSavingPayment}
                                 icon={<Check size={18} />}
@@ -3368,19 +3444,25 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                             >
                                 {detailCopy.markPaidToday}
                             </AppButton>
-                            <ContactButton
+                            <AppButton onClick={markAsPendingTomorrow} variant="secondary" isLoading={isSavingPayment} icon={<Calendar size={17} />} className="sm:min-w-[140px]">
+                                {language === 'en' ? 'Pays tomorrow' : 'Paga mañana'}
+                            </AppButton>
+                            <AppButton onClick={markAsUnpaid} variant="danger" isLoading={isSavingPayment} icon={<AlertTriangle size={17} />} className="sm:min-w-[130px]">
+                                {language === 'en' ? 'Not paid' : 'No pagó'}
+                            </AppButton>
+                            {(paymentForm.status === 'pendiente' || paymentForm.status === 'atrasado') && <ContactButton
                                 onClick={handleGeneratePaymentMessage}
                                 tone="whatsapp"
                                 icon={<MessageSquare size={16} />}
                                 className="sm:min-w-[140px]"
                             >
                                 WhatsApp
-                            </ContactButton>
+                            </ContactButton>}
                         </ButtonGroup>
 
                         {/* Edit Form (Hidden by default or accordion) */}
-                        <div className="pt-6 border-t border-zinc-800">
-                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">{detailCopy.manualSettings}</h4>
+                        <details className="group pt-6 border-t border-zinc-800">
+                            <summary className="mb-4 flex cursor-pointer list-none items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-white">{detailCopy.manualSettings}<ChevronDown size={16} className="transition-transform group-open:rotate-180" /></summary>
                             <div className="bg-zinc-900 p-5 rounded-2xl border border-zinc-800 space-y-4">
                                 <div className="md:col-span-2">
                                     <label className="text-[10px] text-zinc-500 font-black uppercase mb-2 block tracking-widest">{detailCopy.paymentAmount}</label>
@@ -3448,7 +3530,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                     {detailCopy.applySettings}
                                 </AppButton>
                             </div>
-                        </div>
+                        </details>
                      </TabPanel>
                 )}
                 </AnimatePresence>
@@ -4573,6 +4655,7 @@ const GLOBAL_AUTH_INIT = { startedAt: 0 };
 const App = () => {
   const [language, setLanguageState] = useState<AppLanguage>(() => getStoredLanguage());
   const [entitlementNow, setEntitlementNow] = useState(() => new Date());
+  const [clientListFilter, setClientListFilter] = useState<'active' | 'paused' | 'inactive'>('active');
   const isResetPasswordRoute = typeof window !== 'undefined' && window.location.pathname === '/reset-password';
 
   const setLanguage = (nextLanguage: AppLanguage) => {
@@ -5500,6 +5583,13 @@ const App = () => {
   const accessLocked = isSubscriptionLocked(user, entitlementNow);
   const trialDaysRemaining = getTrialDaysRemaining(user, entitlementNow);
   const activeClients = clients.filter(isActiveClient);
+  const pausedClients = clients.filter(client => client.status === 'paused');
+  const finishedClients = clients.filter(client => client.status === 'inactive');
+  const visibleClients = clientListFilter === 'paused'
+    ? pausedClients
+    : clientListFilter === 'inactive'
+      ? finishedClients
+      : activeClients;
   const todaySchedule = getDaySchedule(activeClients);
   const todayTrainingClients = todaySchedule.sessions.map(session => session.client);
   const actionableTodaySessions = todaySchedule.sessions.filter(session => session.status !== 'completed');
@@ -5838,24 +5928,36 @@ const App = () => {
                  </section>
 
                  <section>
-                     <h2 className="text-lg font-black text-white mb-3">{appCopy.myClients}</h2>
+                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                       <h2 className="text-lg font-black text-white">{appCopy.myClients}</h2>
+                       <div className="flex gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-1" role="tablist" aria-label={language === 'en' ? 'Client status' : 'Estado de clientes'}>
+                         {([
+                           ['active', language === 'en' ? 'Active' : 'Activos', activeClients.length],
+                           ['paused', language === 'en' ? 'Paused' : 'Pausados', pausedClients.length],
+                           ['inactive', language === 'en' ? 'Finished' : 'Finalizados', finishedClients.length]
+                         ] as const).map(([value, label, count]) => (
+                           <button key={value} type="button" role="tab" aria-selected={clientListFilter === value} onClick={() => setClientListFilter(value)} className={`min-h-8 rounded-lg px-3 text-[10px] font-black transition-colors ${clientListFilter === value ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
+                             {label} <span className="ml-1 opacity-70">{count}</span>
+                           </button>
+                         ))}
+                       </div>
+                     </div>
                      {clientsLoading ? (
                          <div className="space-y-3">
                              <p className="text-xs font-semibold text-zinc-500">{appCopy.loadingClients}</p>
                              <SkeletonList count={3} />
                          </div>
-                     ) : activeClients.length === 0 ? (
+                     ) : visibleClients.length === 0 ? (
                          <div className="guided-empty-state text-center px-5 py-10 border border-dashed border-zinc-800 rounded-2xl">
                              <div className="guided-empty-icon mb-4">
                                  <Users size={20} />
                              </div>
-                             <p className="text-sm font-black text-zinc-200">{appCopy.firstClientPrompt}</p>
-                             <p className="mx-auto mt-2 mb-5 max-w-md text-xs leading-relaxed text-zinc-500">{appCopy.firstClientDescription}</p>
-                             <AppButton onClick={handleQuickCreateClient} variant="primary" icon={<Plus size={16} />}>{appCopy.createFirstClient}</AppButton>
+                             <p className="text-sm font-black text-zinc-200">{clientListFilter === 'active' ? appCopy.firstClientPrompt : (language === 'en' ? `No ${clientListFilter === 'paused' ? 'paused' : 'finished'} clients` : `No hay clientes ${clientListFilter === 'paused' ? 'pausados' : 'finalizados'}`)}</p>
+                             {clientListFilter === 'active' && <><p className="mx-auto mt-2 mb-5 max-w-md text-xs leading-relaxed text-zinc-500">{appCopy.firstClientDescription}</p><AppButton onClick={handleQuickCreateClient} variant="primary" icon={<Plus size={16} />}>{appCopy.createFirstClient}</AppButton></>}
                          </div>
                      ) : (
                          <div className="space-y-2">
-                             {activeClients.map(client => {
+                             {visibleClients.map(client => {
                                  const paymentAlert = needsPaymentAttention(client);
                                  const aiAlert = needsAIPlan(client);
                                  const statusClass = paymentAlert ? 'bg-red-500' : aiAlert ? 'bg-mvp-gold' : 'bg-green-500';
@@ -5889,10 +5991,11 @@ const App = () => {
                                              </div>
                                          </div>
                                          <div className="flex items-center gap-3 shrink-0">
-                                             {!accessLocked && <span className={`hidden sm:inline-flex px-2 py-1 rounded-full border text-[10px] font-bold ${getPaymentBadgeClass(client)}`}>
+                                             {!accessLocked && client.status === 'active' && <span className={`hidden sm:inline-flex px-2 py-1 rounded-full border text-[10px] font-bold ${getPaymentBadgeClass(client)}`}>
                                                 {getPaymentLabel(client, language)}
                                              </span>}
-                                             {!accessLocked && <span className={`w-2.5 h-2.5 rounded-full ${statusClass}`} />}
+                                             {!accessLocked && client.status !== 'active' && <span className={`hidden sm:inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${client.status === 'paused' ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-zinc-700 bg-zinc-800 text-zinc-400'}`}>{client.status === 'paused' ? (language === 'en' ? 'Paused' : 'Pausado') : (language === 'en' ? 'Finished' : 'Finalizado')}</span>}
+                                             {!accessLocked && client.status === 'active' && <span className={`w-2.5 h-2.5 rounded-full ${statusClass}`} />}
                                              {accessLocked ? <Lock size={16} className="text-zinc-600" /> : <ChevronRight size={16} className="text-zinc-600"/>}
                                          </div>
                                      </button>

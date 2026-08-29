@@ -202,6 +202,7 @@ const syncBillingLedger = async (
   payment: ClientPaymentInfo
 ) => {
   const amount = Number(payment.monthlyFee) || 0;
+  const paidAmount = Number(payment.lastPaymentAmount) || amount;
   if (amount <= 0 || payment.status === 'sin_registro') return;
 
   const today = new Date().toISOString();
@@ -243,7 +244,7 @@ const syncBillingLedger = async (
       const { error } = await client
         .from('billing_records')
         .update({
-          amount,
+          amount: paidAmount,
           paid_at: payment.lastPaidAt || today,
           status: 'paid',
           updated_at: today
@@ -257,7 +258,7 @@ const syncBillingLedger = async (
         trainerId,
         clientId,
         previousDueDate || paidDate,
-        amount,
+        paidAmount,
         'paid',
         payment.lastPaidAt || today
       );
@@ -266,6 +267,30 @@ const syncBillingLedger = async (
 
   if (payment.status === 'pendiente' || payment.status === 'atrasado') {
     const pendingDueDate = dueDate || previousDueDate || toDateOnly(today)!;
+    if (previousDueDate && previousDueDate !== pendingDueDate) {
+      const previousRecord = await findBillingRecord(
+        client,
+        trainerId,
+        clientId,
+        previousDueDate,
+        ['pending', 'late']
+      );
+      if (previousRecord) {
+        const { error } = await client
+          .from('billing_records')
+          .update({
+            due_date: pendingDueDate,
+            amount,
+            status: payment.status === 'atrasado' ? 'late' : 'pending',
+            paid_at: null,
+            updated_at: today
+          })
+          .eq('id', previousRecord.id)
+          .eq('trainer_id', trainerId);
+        if (error) throw error;
+        return;
+      }
+    }
     await ensureBillingRecord(
       client,
       trainerId,
@@ -279,18 +304,28 @@ const syncBillingLedger = async (
   }
 
   if (payment.status === 'al_dia' && dueDate) {
-    const existingDue = await findBillingRecord(
+    let existingDue = await findBillingRecord(
       client,
       trainerId,
       clientId,
       dueDate,
       ['pending', 'late']
     );
+    if (!existingDue && previousDueDate && previousDueDate !== dueDate) {
+      existingDue = await findBillingRecord(
+        client,
+        trainerId,
+        clientId,
+        previousDueDate,
+        ['pending', 'late']
+      );
+    }
     if (existingDue) {
       const { error } = await client
         .from('billing_records')
         .update({
           amount,
+          due_date: dueDate,
           status: 'pending',
           paid_at: null,
           updated_at: today
@@ -639,7 +674,9 @@ export const supabaseProvider: IDBProvider = {
       nextPaymentAt: data.paymentInfo?.nextPaymentAt
         || (initialPaymentStatus === 'al_dia'
           ? nextMonthISO
-          : (initialPaymentStatus === 'pendiente' || initialPaymentStatus === 'atrasado' ? todayISO : null))
+          : (initialPaymentStatus === 'pendiente' || initialPaymentStatus === 'atrasado' ? todayISO : null)),
+      lastPaymentAmount: data.paymentInfo?.lastPaymentAmount || null,
+      lastPaymentMonths: data.paymentInfo?.lastPaymentMonths || null
     };
     const normalizedEmail = typeof data.email === 'string' ? data.email.trim() : '';
 
@@ -660,6 +697,11 @@ export const supabaseProvider: IDBProvider = {
       notes: JSON.stringify({
         payment: {
           ...initialPaymentInfo
+        },
+        service: {
+          status: data.status || 'active',
+          pausedAt: data.pausedAt || null,
+          finishedAt: data.finishedAt || null
         },
         training: {
           days: data.trainingDays,
@@ -739,6 +781,11 @@ export const supabaseProvider: IDBProvider = {
       payment_amount: monthlyFee,
       notes: JSON.stringify({
         payment: mergedPayment,
+        service: {
+          status: data.status ?? existingMeta.service?.status ?? 'active',
+          pausedAt: data.pausedAt !== undefined ? data.pausedAt : (existingMeta.service?.pausedAt || null),
+          finishedAt: data.finishedAt !== undefined ? data.finishedAt : (existingMeta.service?.finishedAt || null)
+        },
         training: {
           days: data.trainingDays || existingMeta.training?.days || [],
           time: data.trainingTime || existingMeta.training?.time || ''
@@ -1087,6 +1134,7 @@ const mapClientToFrontend = (c: any, routines: any[] = [], dietPlansOrDiet: any 
   if (!c) return null;
   const meta = parseNotes(c.notes);
   const payment = meta.payment || meta.payment_info || {};
+  const service = meta.service || {};
   const training = meta.training || {};
   const profile = meta.profile || {};
   const dietPlans = Array.isArray(dietPlansOrDiet)
@@ -1122,9 +1170,13 @@ const mapClientToFrontend = (c: any, routines: any[] = [], dietPlansOrDiet: any 
       paymentMethod: payment.paymentMethod || c.payment_method || 'efectivo',
       status: (payment.status || c.payment_status || 'sin_registro') as any,
       lastPaidAt: payment.lastPaidAt || c.last_paid_at || null,
-      nextPaymentAt: payment.nextPaymentAt || c.next_payment_at || null
+      nextPaymentAt: payment.nextPaymentAt || c.next_payment_at || null,
+      lastPaymentAmount: payment.lastPaymentAmount || null,
+      lastPaymentMonths: payment.lastPaymentMonths || null
     },
-    status: c.status || 'active',
+    status: service.status || c.status || 'active',
+    pausedAt: service.pausedAt || null,
+    finishedAt: service.finishedAt || null,
     createdAt: c.created_at
   } as any;
 };

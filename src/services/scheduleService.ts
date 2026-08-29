@@ -64,7 +64,7 @@ export const normalizeDayName = (value = '') =>
     .trim()
     .toLowerCase();
 
-export const isActiveClient = (client: Client) => client.status !== 'inactive';
+export const isActiveClient = (client: Client) => client.status === 'active';
 
 export const trainsOnDate = (client: Client, date = new Date()) =>
   isActiveClient(client) &&
@@ -227,4 +227,3 @@ export const buildWorkoutReminderMessage = (
     ? `Hi ${session.client.name} \u{1F44B} this is a reminder that we have training today from ${start} to ${end}. See you on time \u{1F4AA}`
     : `Hola ${session.client.name} \u{1F44B} te recuerdo que hoy tenemos entrenamiento de ${start} a ${end}. Nos vemos puntual \u{1F4AA}`;
 };
-

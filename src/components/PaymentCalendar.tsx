@@ -19,10 +19,10 @@ import {
   buildPaymentEventReminderText,
   formatMoney,
   getMonthlyPaymentSummary,
-  markPaymentPaid
 } from '../services/paymentService';
 import { AppLanguage } from '../services/scheduleService';
 import PremiumLockOverlay from './PremiumLockOverlay';
+import QuickPaymentDialog from './QuickPaymentDialog';
 
 interface Props {
   user: User;
@@ -144,6 +144,7 @@ const PaymentCalendar: React.FC<Props> = ({
   const [selectedDate, setSelectedDate] = useState(today);
   const [filter, setFilter] = useState<PaymentFilter>('all');
   const [savingClientId, setSavingClientId] = useState<string | null>(null);
+  const [paymentEvent, setPaymentEvent] = useState<PaymentEvent | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setToday(new Date()), 60_000);
@@ -189,11 +190,13 @@ const PaymentCalendar: React.FC<Props> = ({
     openWhatsApp(event.client, buildPaymentEventReminderText(event, activeLanguage));
   };
 
-  const handleMarkPaid = async (event: PaymentEvent) => {
-    setSavingClientId(event.client.id);
+  const handleMarkPaid = async (payment: ClientPaymentInfo) => {
+    if (!paymentEvent) return;
+    setSavingClientId(paymentEvent.client.id);
     try {
-      await onUpdatePayment(event.client, markPaymentPaid(event.client.paymentInfo));
+      await onUpdatePayment(paymentEvent.client, payment);
       onShowToast?.({ title: copy.paymentSaved, message: copy.paymentSavedMessage, type: 'success' });
+      setPaymentEvent(null);
     } catch (error) {
       onShowToast?.({
         title: copy.errorTitle,
@@ -218,6 +221,17 @@ const PaymentCalendar: React.FC<Props> = ({
 
   return (
     <div className="module-page payment-page mx-auto w-full max-w-5xl px-1 pb-24 sm:px-3">
+      {paymentEvent && (
+        <QuickPaymentDialog
+          clientName={paymentEvent.client.name}
+          country={paymentEvent.client.country}
+          payment={paymentEvent.client.paymentInfo}
+          language={activeLanguage}
+          saving={savingClientId === paymentEvent.client.id}
+          onClose={() => setPaymentEvent(null)}
+          onConfirm={handleMarkPaid}
+        />
+      )}
       <header className="module-page-header mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-start gap-3">
           <div className="module-title-icon payment-title-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300">
@@ -297,7 +311,7 @@ const PaymentCalendar: React.FC<Props> = ({
           language={activeLanguage}
           savingClientId={savingClientId}
           onReminder={sendReminder}
-          onPaid={handleMarkPaid}
+          onPaid={setPaymentEvent}
           onOpenClient={onOpenClient}
         />
       </div>
@@ -324,7 +338,7 @@ const PaymentCalendar: React.FC<Props> = ({
                         language={activeLanguage}
                         saving={savingClientId === event.client.id}
                         onReminder={() => sendReminder(event)}
-                        onPaid={() => handleMarkPaid(event)}
+                        onPaid={() => setPaymentEvent(event)}
                         onOpenClient={() => onOpenClient(event.client, 'payments')}
                       />
                     </React.Fragment>
