@@ -43,6 +43,21 @@ npm run dev
 
 La app corre en `http://localhost:3000`.
 
+## Revision visual aislada
+
+Para revisar la interfaz en Google AI Studio u otro entorno externo sin conectar
+Supabase, Stripe ni datos reales, abre:
+
+```text
+/?review=visual
+```
+
+Este modo usa los componentes reales de la app con clientes, agenda, rutinas,
+dieta y pagos ficticios guardados solo en memoria. No requiere secretos. En AI
+Studio se puede cerrar la ventana de variables de entorno; no se deben introducir
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` ni credenciales de produccion para
+una auditoria visual.
+
 ## Reglas Free / PRO
 
 El plan Free, trial o cualquier usuario no-PRO activo usa límites históricos desde `public.trainer_usage`:
