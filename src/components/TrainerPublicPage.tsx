@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
   Check,
+  Laptop,
   Loader2,
+  MapPin,
   MessageCircle,
   Target,
   UserRound
@@ -28,6 +30,7 @@ const PUBLIC_PAGE_COPY = {
     goals: 'Objetivos que trabajamos',
     whatsappMessage: 'Hola, vi tu perfil en MVP Trainer Pro y quiero conocer tus servicios.',
     poweredBy: 'Perfil profesional creado con MVP Trainer Pro'
+    ,inPerson: 'Entrenamiento presencial', online: 'Asesoría online', both: 'Presencial y online'
   },
   en: {
     loading: 'Loading professional profile',
@@ -40,6 +43,7 @@ const PUBLIC_PAGE_COPY = {
     goals: 'Goals we can work on',
     whatsappMessage: 'Hi, I found your profile on MVP Trainer Pro and would like to learn about your services.',
     poweredBy: 'Professional profile created with MVP Trainer Pro'
+    ,inPerson: 'In-person training', online: 'Online coaching', both: 'In person and online'
   }
 };
 
@@ -81,7 +85,8 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
   const isReady = Boolean(
     trainer &&
     profile?.description?.trim().length &&
-    phone.length >= 7
+    phone.length >= 7 &&
+    profile?.isPublished
   );
   const primary = trainer?.branding?.primaryColor || '#8B5CF6';
   const secondary = trainer?.branding?.secondaryColor || '#050505';
@@ -156,7 +161,7 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
         <div className="grid items-center gap-8 md:grid-cols-[minmax(0,1fr)_280px] md:gap-14">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em]" style={{ color: primary }}>
-              {copy.eyebrow}
+              {profile?.professionalTitle || copy.eyebrow}
             </p>
             <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight sm:text-5xl">
               {brandName}
@@ -164,6 +169,10 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
             <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-300 sm:text-lg">
               {profile?.description || copy.defaultDescription}
             </p>
+            <div className="mt-5 flex flex-wrap gap-3 text-xs font-bold text-zinc-400">
+              <span className="inline-flex items-center gap-2"><Laptop size={15} style={{ color: primary }} />{profile?.modality === 'presencial' ? copy.inPerson : profile?.modality === 'online' ? copy.online : copy.both}</span>
+              {profile?.location && <span className="inline-flex items-center gap-2"><MapPin size={15} style={{ color: primary }} />{profile.location}</span>}
+            </div>
             <a
               href={whatsAppUrl}
               target="_blank"

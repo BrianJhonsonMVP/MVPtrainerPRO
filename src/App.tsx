@@ -12,7 +12,7 @@ import { BillingRecord, Client, Routine, User as AppUser, DietPlan, ClientPaymen
 import { generateWorkoutRoutine, generateDietPlan, getLastGeminiErrorMessage } from './services/geminiService';
 import { supabase, isSupabaseEnabled } from './services/supabaseClient';
 import { dbProvider } from './data';
-import { checkLimit, checkAndResetUsage, getPlanStatusLabel, LIMITS, clearStaleUserCache } from './services/subscriptionUtils';
+import { checkLimit, checkAndResetUsage, getPlanStatusLabel, clearStaleUserCache } from './services/subscriptionUtils';
 import {
   canUseFeature,
   getTrialDaysRemaining,
@@ -36,6 +36,7 @@ import TrainerLandingEditor from './components/TrainerLandingEditor';
 import TrainerPublicPage from './components/TrainerPublicPage';
 import PrioritySessionCard from './components/PrioritySessionCard';
 import QuickPaymentDialog from './components/QuickPaymentDialog';
+import PlanEditorModal from './components/PlanEditorModal';
 import {
   AiButton,
   AppButton,
@@ -59,9 +60,13 @@ import {
   getPaymentDiffDays,
   getPaymentLabel,
   formatMoney,
+  fromLocalDateInputValue,
   markPaymentOverdue,
+  markPaymentPaid,
   markPaymentPending,
-  needsPaymentAttention
+  needsPaymentAttention,
+  parsePaymentDate,
+  toLocalDateInputValue
 } from './services/paymentService';
 import { finishClientService, pauseClientService, reactivateClientService } from './services/clientService';
 
@@ -324,17 +329,17 @@ const AUTH_COPY = {
         confirmPassword: 'Confirmar contraseña',
         enter: 'Entrar',
         entering: 'Ingresando...',
-        createFree: 'Crear cuenta gratis',
+        createFree: 'Comenzar prueba de 21 días',
         creating: 'Creando cuenta...',
         sendRecovery: 'Enviar enlace de recuperación',
         sending: 'Enviando...',
         savePassword: 'Guardar nueva contraseña',
         saving: 'Guardando...',
         forgot: '¿Olvidaste tu contraseña?',
-        newHere: '¿Nuevo en MVP Trainer? Crear cuenta gratis',
+        newHere: '¿Nuevo en MVP Trainer? Probar 21 días',
         already: '¿Ya tienes cuenta? Iniciar sesión',
         backLogin: 'Volver al inicio de sesión',
-        freeCopy: 'Empieza gratis con funciones limitadas. PRO desbloquea uso ilimitado.',
+        freeCopy: 'Prueba todas las funciones durante 21 días. Sin límites ocultos.',
         confirmEmail: 'Cuenta creada. Revisa tu correo para confirmar tu acceso.',
         recoverySent: 'Si el correo está registrado, recibirás un enlace de recuperación.',
         passwordUpdated: 'Contraseña actualizada. Ya puedes iniciar sesión.',
@@ -371,17 +376,17 @@ const AUTH_COPY = {
         confirmPassword: 'Confirm password',
         enter: 'Sign in',
         entering: 'Signing in...',
-        createFree: 'Create free account',
+        createFree: 'Start 21-day trial',
         creating: 'Creating account...',
         sendRecovery: 'Send recovery link',
         sending: 'Sending...',
         savePassword: 'Save new password',
         saving: 'Saving...',
         forgot: 'Forgot your password?',
-        newHere: 'New to MVP Trainer? Create a free account',
+        newHere: 'New to MVP Trainer? Try it for 21 days',
         already: 'Already have an account? Sign in',
         backLogin: 'Back to sign in',
-        freeCopy: 'Start free with limited features. PRO unlocks unlimited use.',
+        freeCopy: 'Try every feature for 21 days. No hidden limits.',
         confirmEmail: 'Account created. Check your email to confirm access.',
         recoverySent: 'If the email is registered, you will receive a recovery link.',
         passwordUpdated: 'Password updated. You can sign in now.',
@@ -414,10 +419,10 @@ const APP_COPY = {
         migrationEmptyMessage: 'No hay datos locales.',
         migrationSuccessTitle: 'Migración exitosa',
         migrationSuccessMessage: (count: number) => `${count} clientes importados.`,
-        currentPlan: 'Plan Actual',
-        basic: 'Básico',
-        upgradePro: 'Mejorar a PRO',
-        usageLimits: 'Uso y Límites',
+        currentPlan: 'Estado de acceso',
+        basic: 'Vencido',
+        upgradePro: 'Activar acceso',
+        usageLimits: 'Actividad de tu cuenta',
         usagePrefix: 'Uso',
         historicalClients: 'Clientes Históricos',
         historicalRoutines: 'Rutinas IA Históricas',
@@ -425,20 +430,20 @@ const APP_COPY = {
         activeClients: 'Clientes Activos',
         weeklyRoutines: 'Rutinas IA (Semanal)',
         weeklyDiets: 'Dietas IA (Semanal)',
-        limitReached: 'Límite alcanzado. Desbloquear PRO',
-        nearLimit: 'Cerca del límite. Mejorar a PRO',
+        limitReached: 'Tu acceso ha vencido. Reactivar',
+        nearLimit: 'Tu acceso requiere atención',
         sync: 'Sincronizando datos...',
         reconnecting: 'Reconectando con el servidor...',
         myDay: 'Mi Día',
         payments: 'Pagos',
         logout: 'Cerrar sesión',
-        proAccess: 'Acceso PRO',
+        proAccess: 'Acceso requerido',
         unlockBanner: <>Desbloquea <strong>clientes ilimitados</strong> y generación IA sin restricciones.</>,
         close: 'Cerrar',
         seePlans: 'Ver Planes',
         hello: 'Hola',
         dayStarts: 'Tu día empieza aquí.',
-        freePlan: 'Plan Free',
+        freePlan: 'Acceso vencido',
         publicPage: 'Mi Página Pública',
         publicPageDescription: 'Configura tu landing page para clientes.',
         active: 'ACTIVO',
@@ -452,7 +457,7 @@ const APP_COPY = {
             'Mejor control de pagos y agenda',
             'Herramientas profesionales para atender mejor'
         ],
-        paywallFreeNote: 'Tu plan Free incluye funciones limitadas para probar la app.',
+        paywallFreeNote: 'Tu prueba incluye todas las funciones durante 21 días.',
         paywallClientsTitle: 'Clientes Ilimitados',
         paywallClientsDescription: 'Gestiona toda tu cartera sin restricciones.',
         paywallAiTitle: 'IA Ilimitada',
@@ -492,7 +497,7 @@ const APP_COPY = {
         noTrainingToday: 'Hoy no tienes entrenamientos programados.',
         upcomingPayments: 'Cobros próximos',
         noPendingPayments: 'Sin cobros pendientes.',
-        usageAndLimits: 'Uso y límites',
+        usageAndLimits: 'Mi cuenta',
         aiPlan: 'Plan IA',
         todayPriority: 'Prioridad de hoy',
         allReadyToday: 'Todo al día',
@@ -521,11 +526,11 @@ const APP_COPY = {
         plan: {
             noSessionLabel: 'Sin sesión',
             noSessionDetail: 'Inicia sesión para ver tu plan',
-            proLabel: 'Plan PRO',
-            proExpiredLabel: 'Plan PRO (Expirado)',
+            proLabel: 'Acceso activo',
+            proExpiredLabel: 'Acceso vencido',
             proDetail: 'Acceso total ilimitado',
             proExpiredDetail: 'Tu suscripción ha vencido',
-            trialLabel: 'Prueba Gratuita',
+            trialLabel: 'Prueba de 21 días',
             trialDetail: 'Acceso completo durante 21 días',
             freeLabel: 'Acceso vencido',
             freeDetail: 'Tus datos están protegidos hasta activar tu plan'
@@ -545,10 +550,10 @@ const APP_COPY = {
         migrationEmptyMessage: 'There is no local data.',
         migrationSuccessTitle: 'Migration complete',
         migrationSuccessMessage: (count: number) => `${count} clients imported.`,
-        currentPlan: 'Current Plan',
-        basic: 'Basic',
-        upgradePro: 'Upgrade to PRO',
-        usageLimits: 'Usage and Limits',
+        currentPlan: 'Access status',
+        basic: 'Expired',
+        upgradePro: 'Activate access',
+        usageLimits: 'Account activity',
         usagePrefix: 'Usage',
         historicalClients: 'Historical Clients',
         historicalRoutines: 'Historical AI Workouts',
@@ -556,20 +561,20 @@ const APP_COPY = {
         activeClients: 'Active Clients',
         weeklyRoutines: 'AI Workouts (Weekly)',
         weeklyDiets: 'AI Diets (Weekly)',
-        limitReached: 'Limit reached. Unlock PRO',
-        nearLimit: 'Near the limit. Upgrade to PRO',
+        limitReached: 'Your access has expired. Reactivate',
+        nearLimit: 'Your access needs attention',
         sync: 'Syncing data...',
         reconnecting: 'Reconnecting to the server...',
         myDay: 'My Day',
         payments: 'Payments',
         logout: 'Sign out',
-        proAccess: 'PRO Access',
+        proAccess: 'Access required',
         unlockBanner: <>Unlock <strong>unlimited clients</strong> and unrestricted AI generation.</>,
         close: 'Close',
         seePlans: 'See Plans',
         hello: 'Hi',
         dayStarts: 'Your training day starts here.',
-        freePlan: 'Free Plan',
+        freePlan: 'Access expired',
         publicPage: 'My Public Page',
         publicPageDescription: 'Set up your client landing page.',
         active: 'ACTIVE',
@@ -583,7 +588,7 @@ const APP_COPY = {
             'Better payment and schedule control',
             'Professional tools to deliver better service'
         ],
-        paywallFreeNote: 'Your Free plan includes limited features so you can try the app.',
+        paywallFreeNote: 'Your trial includes every feature for 21 days.',
         paywallClientsTitle: 'Unlimited Clients',
         paywallClientsDescription: 'Manage your full roster without restrictions.',
         paywallAiTitle: 'Unlimited AI',
@@ -623,7 +628,7 @@ const APP_COPY = {
         noTrainingToday: 'You have no training sessions scheduled today.',
         upcomingPayments: 'Upcoming payments',
         noPendingPayments: 'No pending payments.',
-        usageAndLimits: 'Usage and limits',
+        usageAndLimits: 'My account',
         aiPlan: 'AI Plan',
         todayPriority: "Today's priority",
         allReadyToday: 'Everything is up to date',
@@ -652,11 +657,11 @@ const APP_COPY = {
         plan: {
             noSessionLabel: 'No session',
             noSessionDetail: 'Sign in to see your plan',
-            proLabel: 'PRO Plan',
-            proExpiredLabel: 'PRO Plan (Expired)',
+            proLabel: 'Active access',
+            proExpiredLabel: 'Access expired',
             proDetail: 'Unlimited full access',
             proExpiredDetail: 'Your subscription has expired',
-            trialLabel: 'Free Trial',
+            trialLabel: '21-day trial',
             trialDetail: 'Full access for 21 days',
             freeLabel: 'Access expired',
             freeDetail: 'Your data is protected until you activate your plan'
@@ -842,8 +847,8 @@ const GOAL_LABELS: Record<AppLanguage, Record<string, string>> = {
 const DAY_DISPLAY: Record<AppLanguage, Record<string, { short: string; full: string }>> = {
     es: {
         Lunes: { short: 'L', full: 'Lunes' },
-        Martes: { short: 'M', full: 'Martes' },
-        Miércoles: { short: 'M', full: 'Miércoles' },
+        Martes: { short: 'Ma', full: 'Martes' },
+        Miércoles: { short: 'Mi', full: 'Miércoles' },
         Jueves: { short: 'J', full: 'Jueves' },
         Viernes: { short: 'V', full: 'Viernes' },
         Sábado: { short: 'S', full: 'Sábado' },
@@ -2268,14 +2273,12 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
   const planStatus = user ? getTranslatedPlanStatus(user, language, getPlanStatusLabel(user)) : null;
   const isPro = hasFullAccess(user);
   const publicProfileReady = Boolean(
-    user.publicProfile?.description?.trim() &&
+    user.publicProfile?.isPublished &&
+    user.publicProfile?.description?.trim().length >= 20 &&
+    user.publicProfile?.profileImageUrl &&
+    user.publicProfile?.services?.length &&
     normalizeWhatsAppPhone(user.publicProfile?.whatsAppNumber).length >= 7
   );
-
-  // Limits
-  const clientLimit = isPro ? Infinity : LIMITS.FREE_CLIENTS;
-  const routineLimit = isPro ? Infinity : LIMITS.FREE_ROUTINES_WEEKLY;
-  const dietLimit = isPro ? Infinity : LIMITS.FREE_DIETS_WEEKLY;
 
   const safeLogout = async () => {
     if (onLogout) {
@@ -2290,7 +2293,7 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
   return (
     <div className="animate-fadeIn max-w-6xl mx-auto w-full pb-20 dev-preview-safe-bottom">
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={onBack} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><ChevronRight className="rotate-180"/></button>
+        <IconButton onClick={onBack} aria-label={language === 'es' ? 'Volver' : 'Back'}><ChevronRight className="rotate-180" size={18}/></IconButton>
         <h2 className="text-2xl font-bold text-white">{copy.accountTitle}</h2>
       </div>
 
@@ -2315,43 +2318,6 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
           </div>
         </div>
 
-        {/* Migration Card */}
-        {dbProvider.name === 'Supabase Cloud' && (
-            <div className="bg-zinc-900/90 p-6 rounded-2xl border border-zinc-800 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-                <h4 className="font-bold text-white mb-2 flex items-center gap-2">
-                    <Sparkles size={18} className="text-mvp-gold"/> {copy.migrationTitle}
-                </h4>
-                <p className="text-sm text-zinc-500 mb-4">
-                    {copy.migrationDescription}
-                </p>
-                <AppButton
-                    onClick={async () => {
-                        requestConfirm({
-                            title: copy.migrationConfirmTitle,
-                            message: copy.migrationConfirmMessage,
-                            type: 'warning',
-                            onConfirm: async () => {
-                                const localClients = JSON.parse(localStorage.getItem('mvp_v2_clients_collection') || '[]');
-                                if (localClients.length === 0) return onShowToast({ title: copy.migrationEmptyTitle, message: copy.migrationEmptyMessage, type: 'warning' });
-                                let count = 0;
-                                for (const c of localClients) {
-                                    const existing = clients.find(ec => ec.email === c.email);
-                                    if (!existing) {
-                                        await dbProvider.createClient(user.uid, c);
-                                        count++;
-                                    }
-                                }
-                                onShowToast({ title: copy.migrationSuccessTitle, message: copy.migrationSuccessMessage(count), type: 'success' });
-                            }
-                        });
-                    }}
-                    variant="secondary"
-                    icon={<Copy size={16}/>}
-                >
-                    {copy.migrationButton}
-                </AppButton>
-            </div>
-        )}
         </div>
 
         {/* Plan Status */}
@@ -2368,7 +2334,7 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
                  <span className="text-zinc-500 text-xs font-bold uppercase tracking-wider">{copy.currentPlan}</span>
                  <div className="flex items-center gap-2 mt-1">
                    <h2 className={`text-2xl font-black ${planStatus.color}`}>{planStatus.label}</h2>
-                   {!isPro && <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">{copy.basic}</span>}
+                   {!isPro && <span className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">{copy.basic}</span>}
                  </div>
                  <p className="text-sm text-zinc-400 mt-2">{planStatus.detail}</p>
                </div>
@@ -2396,29 +2362,18 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
                    </div>
                  </div>
                ) : (
-                 <>
-                   <UsageProgress 
-                      current={clients.length} 
-                      max={clientLimit} 
-                      label={copy.activeClients}
-                      onUpgrade={onShowPaywall}
-                      language={language}
-                   />
-                   <UsageProgress 
-                      current={user?.subscription?.usage?.routinesGenerated || 0} 
-                      max={routineLimit} 
-                      label={copy.weeklyRoutines}
-                      onUpgrade={onShowPaywall}
-                      language={language}
-                   />
-                   <UsageProgress 
-                      current={user?.subscription?.usage?.dietsGenerated || 0} 
-                      max={dietLimit} 
-                      label={copy.weeklyDiets}
-                      onUpgrade={onShowPaywall}
-                      language={language}
-                   />
-                 </>
+                 <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-zinc-800 bg-black/20">
+                   {[
+                     [clients.filter(isActiveClient).length, copy.activeClients],
+                     [user?.trainerUsage?.ai_routines_generated_total || user?.subscription?.usage?.routinesGenerated || 0, language === 'es' ? 'Rutinas creadas' : 'Workouts created'],
+                     [user?.trainerUsage?.ai_diets_generated_total || user?.subscription?.usage?.dietsGenerated || 0, language === 'es' ? 'Dietas creadas' : 'Diets created']
+                   ].map(([value, label]) => (
+                     <div key={String(label)} className="border-r border-zinc-800 px-2 py-4 text-center last:border-r-0">
+                       <strong className="block text-xl font-black text-white">{value}</strong>
+                       <span className="mt-1 block text-[10px] font-bold text-zinc-500">{label}</span>
+                     </div>
+                   ))}
+                 </div>
                )}
              </div>
            </div>
@@ -2450,7 +2405,7 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
                          {publicProfileReady ? copy.active : (language === 'es' ? 'BORRADOR' : 'DRAFT')}
                      </div>
                  ) : (
-                     <div className="text-xs bg-zinc-800 text-zinc-500 px-2 py-1 rounded border border-zinc-700"><Lock size={12} className="inline mr-1"/> PRO</div>
+                     <div className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-500"><Lock size={12} className="mr-1 inline"/> {language === 'es' ? 'ACCESO VENCIDO' : 'ACCESS EXPIRED'}</div>
                  )}
              </div>
              <TrainerLandingEditor 
@@ -2514,6 +2469,11 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
     });
     const [isSavingPayment, setIsSavingPayment] = useState(false);
     const [isQuickPaymentOpen, setIsQuickPaymentOpen] = useState(false);
+    const [editingPlan, setEditingPlan] = useState<{ type: 'routine' | 'diet'; plan: Routine | DietPlan } | null>(null);
+    const [isSavingPlanEdit, setIsSavingPlanEdit] = useState(false);
+    const planningFields = [client.age, client.weight, client.height, client.mainGoal];
+    const planningReadyCount = planningFields.filter(Boolean).length;
+    const planningProgress = Math.round((planningReadyCount / planningFields.length) * 100);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -2572,6 +2532,23 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
             }
             return;
         }
+        const missingProfileFields = [
+            !client.age && (language === 'en' ? 'age' : 'edad'),
+            !client.weight && (language === 'en' ? 'weight' : 'peso'),
+            !client.height && (language === 'en' ? 'height' : 'altura'),
+            !client.mainGoal && (language === 'en' ? 'main goal' : 'objetivo principal')
+        ].filter(Boolean) as string[];
+        if (missingProfileFields.length > 0) {
+            onShowToast({
+                title: language === 'en' ? 'Complete the client profile' : 'Completa el perfil del cliente',
+                message: language === 'en'
+                    ? `Add ${missingProfileFields.join(', ')} before generating a safe personalized plan.`
+                    : `Agrega ${missingProfileFields.join(', ')} antes de generar un plan seguro y personalizado.`,
+                type: 'warning'
+            });
+            onEdit();
+            return;
+        }
         await callback();
     };
 
@@ -2582,8 +2559,9 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
             const routineData = await generateWorkoutRoutine(client, language);
             if (routineData) {
                 const newRoutine: any = {
-                    name: routineData.name || detailCopy.routineFallbackTitle,
-                    description: routineData.description || "",
+                    ...routineData,
+                    name: routineData.name || routineData.title || detailCopy.routineFallbackTitle,
+                    description: routineData.description || routineData.summary || "",
                     exercises: routineData.exercises as any[] || [],
                     tags: routineData.tags || [],
                     source: routineData.source || "fallback"
@@ -2756,8 +2734,19 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
     };
 
     const reactivateService = async () => {
-        await onUpdate(reactivateClientService(client));
-        onShowToast({ title: language === 'en' ? 'Client reactivated' : 'Cliente reactivado', message: language === 'en' ? 'The client is active again.' : 'El cliente vuelve a estar activo.', type: 'success' });
+        const changes = reactivateClientService(client);
+        await onUpdate(changes);
+        const nextPayment = parsePaymentDate(changes.paymentInfo?.nextPaymentAt);
+        const paymentMessage = nextPayment
+            ? nextPayment.toLocaleDateString(language === 'en' ? 'en-US' : 'es-PE', { day: 'numeric', month: 'long' })
+            : null;
+        onShowToast({
+            title: language === 'en' ? 'Client reactivated' : 'Cliente reactivado',
+            message: paymentMessage
+                ? (language === 'en' ? `Next payment: ${paymentMessage}.` : `Próximo cobro: ${paymentMessage}.`)
+                : (language === 'en' ? 'The client is active again.' : 'El cliente vuelve a estar activo.'),
+            type: 'success'
+        });
     };
 
     const finishService = () => requestConfirm({
@@ -2805,6 +2794,33 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
         }));
     };
 
+    const savePlanEdit = async (plan: Routine | DietPlan) => {
+        if (!editingPlan) return;
+        setIsSavingPlanEdit(true);
+        try {
+            if (editingPlan.type === 'routine') {
+                await dbProvider.saveRoutine(user.uid, client.id, plan as Routine);
+                const routines = sortPlansNewest(await dbProvider.getRoutines(client.id));
+                setClientRoutines(routines);
+                onUpdate({ routines });
+            } else {
+                await dbProvider.saveDiet(user.uid, client.id, plan as DietPlan);
+                const diets = sortPlansNewest(await dbProvider.getDiets(client.id));
+                const selected = diets.find(item => item.id === (plan as DietPlan).id) || diets[0] || null;
+                setClientDiets(diets);
+                setClientDiet(selected);
+                onUpdate({ dietPlan: selected, dietPlans: diets });
+            }
+            setEditingPlan(null);
+            onShowToast({ title: language === 'en' ? 'Plan updated' : 'Plan actualizado', message: language === 'en' ? 'Your changes are ready to share.' : 'Tus cambios están listos para compartir.', type: 'success' });
+        } catch (error) {
+            console.error('Plan edit failed', error);
+            onShowToast({ title: detailCopy.saveErrorTitle, message: language === 'en' ? 'The plan changes could not be saved.' : 'No se pudieron guardar los cambios del plan.', type: 'error' });
+        } finally {
+            setIsSavingPlanEdit(false);
+        }
+    };
+
     const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
     return (
         <div className="client-detail-page flex flex-col h-full">
@@ -2819,10 +2835,11 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                     onConfirm={saveQuickPayment}
                 />
             )}
+            {editingPlan && <PlanEditorModal type={editingPlan.type} plan={editingPlan.plan} language={language} saving={isSavingPlanEdit} onClose={() => setEditingPlan(null)} onSave={savePlanEdit} />}
             {/* Header Cliente */}
             <div className="client-detail-header mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                    <button onClick={onBack} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><ChevronRight className="rotate-180"/></button>
+                    <IconButton onClick={onBack} aria-label={language === 'en' ? 'Back' : 'Volver'}><ChevronRight className="rotate-180" size={18}/></IconButton>
                     <img src={client.avatarUrl} alt="" className="client-detail-avatar w-14 h-14 rounded-full border border-mvp-gold object-cover" />
                     <div className="min-w-0">
                         <h2 className="text-xl font-bold text-white">{client.name}</h2>
@@ -2834,11 +2851,11 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                 </div>
                 <div className="flex items-center justify-end gap-2">
                   {client.status === 'active' ? (
-                    <button type="button" onClick={pauseService} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 text-xs font-black text-amber-300" title={language === 'en' ? 'Pause client' : 'Pausar cliente'}><Pause size={16} /><span className="hidden sm:inline">{language === 'en' ? 'Pause' : 'Pausar'}</span></button>
+                    <AppButton type="button" compact onClick={pauseService} variant="secondary" icon={<Pause size={16} />} className="border-amber-500/25 text-amber-300" title={language === 'en' ? 'Pause client' : 'Pausar cliente'}><span className="hidden sm:inline">{language === 'en' ? 'Pause' : 'Pausar'}</span></AppButton>
                   ) : (
-                    <button type="button" onClick={reactivateService} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-3 text-xs font-black text-emerald-300" title={language === 'en' ? 'Reactivate client' : 'Reactivar cliente'}><Play size={16} /><span className="hidden sm:inline">{language === 'en' ? 'Reactivate' : 'Reactivar'}</span></button>
+                    <AppButton type="button" compact onClick={reactivateService} variant="success" icon={<Play size={16} />} title={language === 'en' ? 'Reactivate client' : 'Reactivar cliente'}><span className="hidden sm:inline">{language === 'en' ? 'Reactivate' : 'Reactivar'}</span></AppButton>
                   )}
-                  {client.status !== 'inactive' && <button type="button" onClick={finishService} className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-red-500/30 hover:text-red-300" title={language === 'en' ? 'Finish service' : 'Finalizar servicio'} aria-label={language === 'en' ? 'Finish service' : 'Finalizar servicio'}><UserX size={17} /></button>}
+                  {client.status !== 'inactive' && <IconButton type="button" tone="danger" onClick={finishService} title={language === 'en' ? 'Finish service' : 'Finalizar servicio'} aria-label={language === 'en' ? 'Finish service' : 'Finalizar servicio'}><UserX size={17} /></IconButton>}
                 </div>
             </div>
 
@@ -2868,6 +2885,13 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                 <AnimatePresence mode="wait" initial={false}>
                 {activeTab === 'profile' && (
                     <TabPanel key="profile" className="space-y-4 motion-card-stagger">
+                        <div className={`rounded-xl border p-4 ${planningProgress === 100 ? 'border-emerald-500/20 bg-emerald-500/8' : 'border-violet-500/20 bg-violet-500/8'}`}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div><h3 className="text-sm font-black text-white">{language === 'en' ? 'Ready for personalized plans' : 'Preparación para planes personalizados'}</h3><p className="mt-1 text-xs text-zinc-400">{planningProgress === 100 ? (language === 'en' ? 'The essential data for AI workouts and diets is complete.' : 'Los datos esenciales para rutinas y dietas con IA están completos.') : (language === 'en' ? 'Complete age, weight, height and main goal before generating a plan.' : 'Completa edad, peso, altura y objetivo principal antes de generar un plan.')}</p></div>
+                                <strong className="shrink-0 text-lg font-black text-violet-200">{planningProgress}%</strong>
+                            </div>
+                            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/40"><span className="block h-full rounded-full bg-violet-500 transition-[width]" style={{ width: `${planningProgress}%` }} /></div>
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800"><span className="text-zinc-500 text-xs">{detailCopy.weight}</span><p className="text-xl font-bold text-white">{client.weight || '-'} kg</p></div>
                             <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800"><span className="text-zinc-500 text-xs">{detailCopy.height}</span><p className="text-xl font-bold text-white">{client.height || '-'} cm</p></div>
@@ -2898,7 +2922,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                 )}
                             </div>
                         </div>
-                         <button onClick={onEdit} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 mt-4"><Edit2 size={16}/> {detailCopy.editProfile}</button>
+                         <AppButton onClick={onEdit} variant="secondary" icon={<Edit2 size={16}/>} className="mt-4 w-full">{detailCopy.editProfile}</AppButton>
                     </TabPanel>
                 )}
                 {activeTab === 'agenda' && (
@@ -3050,6 +3074,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                                     </div>
 
                                                     <ButtonGroup className="mt-4 plan-action-group">
+                                                        <AppButton onClick={() => setEditingPlan({ type: 'routine', plan: r })} variant="secondary" icon={<Edit2 size={16} />} className="sm:min-w-[132px]">{language === 'en' ? 'Edit' : 'Editar'}</AppButton>
                                                         <ContactButton
                                                             onClick={(e) => { e.stopPropagation(); handleWhatsAppShare('routine', r); }} 
                                                             tone="whatsapp"
@@ -3230,6 +3255,7 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                             </div>
 
                                             <ButtonGroup className="mt-4 plan-action-group">
+                                                <AppButton onClick={() => setEditingPlan({ type: 'diet', plan: clientDiet! })} variant="secondary" icon={<Edit2 size={16} />} className="sm:min-w-[132px]">{language === 'en' ? 'Edit' : 'Editar'}</AppButton>
                                                 <ContactButton
                                                     onClick={() => handleWhatsAppShare('diet', clientDiet!)} 
                                                     tone="whatsapp"
@@ -3482,8 +3508,8 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                         <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">{detailCopy.lastPayment}</label>
                                         <input 
                                             type="date" 
-                                            value={paymentForm.lastPaidAt ? paymentForm.lastPaidAt.split('T')[0] : ''} 
-                                            onChange={(e) => setPaymentForm({...paymentForm, lastPaidAt: e.target.value ? new Date(e.target.value).toISOString() : ''})} 
+                                            value={toLocalDateInputValue(paymentForm.lastPaidAt)}
+                                            onChange={(e) => setPaymentForm({...paymentForm, lastPaidAt: fromLocalDateInputValue(e.target.value) || ''})}
                                             className="w-full bg-black border border-zinc-700 text-white rounded-xl px-4 py-3 focus:border-mvp-gold outline-none text-xs"
                                         />
                                     </div>
@@ -3491,8 +3517,8 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                         <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">{detailCopy.nextCharge}</label>
                                         <input 
                                             type="date" 
-                                            value={paymentForm.nextPaymentAt ? paymentForm.nextPaymentAt.split('T')[0] : ''} 
-                                            onChange={(e) => setPaymentForm({...paymentForm, nextPaymentAt: e.target.value ? new Date(e.target.value).toISOString() : ''})} 
+                                            value={toLocalDateInputValue(paymentForm.nextPaymentAt)}
+                                            onChange={(e) => setPaymentForm({...paymentForm, nextPaymentAt: fromLocalDateInputValue(e.target.value) || ''})}
                                             className="w-full bg-black border border-zinc-700 text-white rounded-xl px-4 py-3 focus:border-mvp-gold outline-none text-xs"
                                         />
                                     </div>
@@ -3530,7 +3556,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
         dietFocus: '',
         trainingDays: [] as string[],
         trainingStartTime: '07:00',
-        trainingEndTime: '08:00'
+        trainingEndTime: '08:00',
+        initialPaymentState: 'unregistered' as 'unregistered' | 'paid' | 'tomorrow'
     });
 
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -3551,6 +3578,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
 
     useEffect(() => {
         if (initialData) {
+            const [rawStart = '', rawEnd = ''] = (initialData.trainingTime || '').split(' - ');
             setOptionalDataOpen(Boolean(initialData.email));
             setFormData({
                 name: initialData.name || '',
@@ -3570,8 +3598,9 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                 routineFocus: initialData.routineFocus || '',
                 dietFocus: initialData.dietFocus || '',
                 trainingDays: initialData.trainingDays || [],
-                trainingStartTime: '07:00',
-                trainingEndTime: '08:00'
+                trainingStartTime: convertTo24Hour(rawStart) || '07:00',
+                trainingEndTime: convertTo24Hour(rawEnd) || '08:00',
+                initialPaymentState: initialData.paymentInfo?.status === 'al_dia' ? 'paid' : initialData.paymentInfo?.status === 'pendiente' ? 'tomorrow' : 'unregistered'
             });
         }
     }, [initialData]);
@@ -4032,16 +4061,16 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
         name: language === 'en' ? 'Name is required and must have at least 2 real characters.' : 'El nombre es obligatorio y debe tener al menos 2 caracteres reales.',
         email: language === 'en' ? 'Enter a valid email or leave this field empty.' : 'Ingresa un correo electrónico válido o deja este campo vacío.',
         phone: language === 'en' ? 'Phone is required and must have at least 7 digits.' : 'El teléfono es obligatorio y debe tener un mínimo de 7 dígitos.',
-        age: language === 'en' ? 'Age is required and must be between 12 and 90.' : 'La edad es obligatoria (debe tener entre 12 y 90 años).',
-        weight: language === 'en' ? 'Weight is required and must be between 30 and 250 kg.' : 'El peso es obligatorio (debe estar entre 30 y 250 kg).',
-        height: language === 'en' ? 'Height is required and must be between 100 and 230 cm.' : 'La altura es obligatoria (debe estar entre 100 y 230 cm).',
+        age: language === 'en' ? 'If you enter an age, it must be between 12 and 90.' : 'Si registras la edad, debe estar entre 12 y 90 años.',
+        weight: language === 'en' ? 'If you enter a weight, it must be between 30 and 250 kg.' : 'Si registras el peso, debe estar entre 30 y 250 kg.',
+        height: language === 'en' ? 'If you enter a height, it must be between 100 and 230 cm.' : 'Si registras la altura, debe estar entre 100 y 230 cm.',
         country: language === 'en' ? 'Country is required.' : 'El país es obligatorio.',
         experienceLevel: language === 'en' ? 'Experience level is required.' : 'El nivel de experiencia es obligatorio.',
         goals: language === 'en' ? 'Select a main goal.' : 'Debes seleccionar un objetivo principal.',
         trainingDays: language === 'en' ? 'Select at least 1 training day.' : 'Debes seleccionar al menos 1 día de entrenamiento.',
-        trainingTimeRequired: language === 'en' ? 'Start and end times are required.' : 'Los horarios de inicio y fin son obligatorios.',
+        trainingTimeRequired: language === 'en' ? 'Choose both start and end time for the selected training days.' : 'Elige hora de inicio y fin para los días de entrenamiento seleccionados.',
         trainingTimeOrder: language === 'en' ? 'End time must be later than start time.' : 'La hora de fin debe ser posterior a la hora de inicio.',
-        fee: language === 'en' ? 'Monthly fee is required and must be greater than or equal to 0.' : 'La mensualidad es obligatoria y debe ser mayor o igual a 0.',
+        fee: language === 'en' ? 'If you enter a monthly fee, it must be greater than or equal to 0.' : 'Si registras una mensualidad, debe ser mayor o igual a 0.',
         incompleteTitle: language === 'en' ? 'Incomplete Data' : 'Datos Incompletos',
         incompleteMessage: language === 'en' ? 'Fix the fields highlighted in red to continue.' : 'Corrige los errores resaltados en rojo para continuar.',
         scheduleTitle: language === 'en' ? 'Schedule conflict' : 'Horario ocupado'
@@ -4071,21 +4100,21 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
             newErrors.phone = formErrors.phone;
         }
         
-        // 4. Age validation
+        // Physical data is optional during quick creation, but validated when provided.
         const ageNum = Number(formData.age);
-        if (formData.age === "" || isNaN(ageNum) || ageNum < 12 || ageNum > 90) {
+        if (formData.age !== "" && (isNaN(ageNum) || ageNum < 12 || ageNum > 90)) {
             newErrors.age = formErrors.age;
         }
         
         // 5. Weight validation
         const weightNum = Number(formData.weight);
-        if (formData.weight === "" || isNaN(weightNum) || weightNum < 30 || weightNum > 250) {
+        if (formData.weight !== "" && (isNaN(weightNum) || weightNum < 30 || weightNum > 250)) {
             newErrors.weight = formErrors.weight;
         }
         
         // 6. Height validation
         const heightNum = Number(formData.height);
-        if (formData.height === "" || isNaN(heightNum) || heightNum < 100 || heightNum > 230) {
+        if (formData.height !== "" && (isNaN(heightNum) || heightNum < 100 || heightNum > 230)) {
             newErrors.height = formErrors.height;
         }
         
@@ -4104,22 +4133,17 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
             newErrors.goals = formErrors.goals;
         }
         
-        // 10. Training Days validation
-        if (formData.trainingDays.length === 0) {
-            newErrors.trainingDays = formErrors.trainingDays;
-        }
-        
-        // 11. Schedule times validation
-        if (!formData.trainingStartTime || !formData.trainingEndTime) {
+        // Agenda is optional during quick creation. Validate it only when days were selected.
+        if (formData.trainingDays.length > 0 && (!formData.trainingStartTime || !formData.trainingEndTime)) {
             newErrors.trainingTime = formErrors.trainingTimeRequired;
-        } else if (formData.trainingStartTime >= formData.trainingEndTime) {
+        } else if (formData.trainingDays.length > 0 && formData.trainingStartTime >= formData.trainingEndTime) {
             newErrors.trainingTime = formErrors.trainingTimeOrder;
         }
         
         // 12. Fee validation
         if (!initialData) {
             const feeNum = Number(formData.fee);
-            if (formData.fee === "" || isNaN(feeNum) || feeNum < 0) {
+            if (formData.fee !== "" && (isNaN(feeNum) || feeNum < 0)) {
                 newErrors.fee = formErrors.fee;
             }
         }
@@ -4157,6 +4181,21 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
 
         appLog("FORM VALIDATION PASSED");
 
+        const basePayment: ClientPaymentInfo = {
+            monthlyFee: Number(formData.fee || 0),
+            status: initialData?.paymentInfo?.status || 'sin_registro',
+            paymentMethod: initialData?.paymentInfo?.paymentMethod || 'efectivo',
+            lastPaidAt: initialData?.paymentInfo?.lastPaidAt || null,
+            nextPaymentAt: initialData?.paymentInfo?.nextPaymentAt || null
+        };
+        const initialPayment = initialData
+            ? basePayment
+            : formData.initialPaymentState === 'paid'
+                ? markPaymentPaid(basePayment)
+                : formData.initialPaymentState === 'tomorrow'
+                    ? markPaymentPending(basePayment)
+                    : basePayment;
+
         const payload = {
             name: formData.name.trim(),
             email: optionalEmail || null,
@@ -4174,14 +4213,10 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
             routineFocus: formData.routineFocus.trim(),
             dietFocus: formData.dietFocus.trim(),
             trainingDays: formData.trainingDays,
-            trainingTime: `${convertTo12Hour(formData.trainingStartTime + ':00')} - ${convertTo12Hour(formData.trainingEndTime + ':00')}`,
-            paymentInfo: { 
-                monthlyFee: Number(formData.fee || 0), 
-                status: initialData?.paymentInfo?.status || 'sin_registro' as const, 
-                paymentMethod: initialData?.paymentInfo?.paymentMethod || 'efectivo' as const, 
-                lastPaidAt: initialData?.paymentInfo?.lastPaidAt || null,
-                nextPaymentAt: initialData?.paymentInfo?.nextPaymentAt || null 
-            }
+            trainingTime: formData.trainingDays.length > 0
+                ? `${convertTo12Hour(formData.trainingStartTime + ':00')} - ${convertTo12Hour(formData.trainingEndTime + ':00')}`
+                : null,
+            paymentInfo: initialPayment
         };
         appLog("PAYLOAD READY", payload);
 
@@ -4261,9 +4296,13 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                          </div>
                     </div>
 
-                    {/* Section: Perfil Físico */}
-                    <div className="space-y-4">
-                         <h4 className="text-xs font-bold text-mvp-gold uppercase tracking-wider">{formCopy.physicalProfile}</h4>
+                    {/* Optional physical profile. Required only before AI generation. */}
+                    <details className="group overflow-hidden rounded-xl border border-zinc-800 bg-black/25">
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 text-sm font-black text-white">
+                        <span>{formCopy.physicalProfile} <span className="ml-2 text-[10px] font-bold text-zinc-500">{language === 'en' ? 'Complete later' : 'Completar después'}</span></span>
+                        <ChevronDown size={17} className="text-zinc-500 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="space-y-4 border-t border-zinc-800 p-4">
                          <div className="grid grid-cols-2 gap-4">
                              <div>
                                 <label className="text-[10px] text-zinc-500 font-bold mb-1 block">{formCopy.gender}</label>
@@ -4315,7 +4354,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                                  <option value="advanced">{formCopy.advanced}</option>
                              </select>
                          </div>
-                    </div>
+                      </div>
+                    </details>
 
                     {/* Section: Objetivos */}
                     <div className="space-y-4" id="error-container-goals">
@@ -4400,29 +4440,24 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                          {errors.goals && <p className="text-red-500 text-xs font-semibold">{errors.goals}</p>}
                          <div>
                             <label className="text-[10px] text-zinc-500 font-bold mb-2 block">{formCopy.primaryGoal}</label>
-                            <div className={`flex flex-wrap gap-2 p-2 rounded-xl transition-all ${errors.goals ? 'border border-red-500 bg-red-950/10' : ''}`}>
-                            {PRIMARY_GOALS.map(goal => {
-                                const isSelected = formData.mainGoal === goal;
-                                return (
-                                    <button 
-                                        type="button"
-                                        key={goal}
-                                        onClick={() => {
-                                            setFormData(prev => ({ ...prev, mainGoal: goal }));
-                                            if (errors.goals) setErrors(prev => ({ ...prev, goals: "" }));
-                                        }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                                            isSelected 
-                                            ? 'bg-mvp-gold border-mvp-gold text-black' 
-                                            : 'bg-black border-zinc-700 text-zinc-400 hover:border-zinc-500'
-                                        }`}
-                                    >
-                                        {goalLabel(goal, language)}
-                                    </button>
-                                );
-                            })}
-                            </div>
+                            <select
+                              value={formData.mainGoal}
+                              onChange={event => {
+                                setFormData(prev => ({ ...prev, mainGoal: event.target.value }));
+                                if (errors.goals) setErrors(prev => ({ ...prev, goals: "" }));
+                              }}
+                              className={`w-full rounded-xl border bg-black px-4 py-3 text-sm font-bold text-white outline-none focus:border-violet-400 ${errors.goals ? 'border-red-500' : 'border-zinc-700'}`}
+                            >
+                              <option value="">{language === 'en' ? 'Choose the main goal' : 'Elige el objetivo principal'}</option>
+                              {PRIMARY_GOALS.map(goal => <option key={goal} value={goal}>{goalLabel(goal, language)}</option>)}
+                            </select>
                          </div>
+                         <details className="group overflow-hidden rounded-xl border border-zinc-800 bg-black/25">
+                           <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 text-sm font-black text-white">
+                             <span>{language === 'en' ? 'Plan personalization' : 'Personalización del plan'} <span className="ml-2 text-[10px] font-bold text-zinc-500">{language === 'en' ? 'Optional' : 'Opcional'}</span></span>
+                             <ChevronDown size={17} className="text-zinc-500 transition-transform group-open:rotate-180" />
+                           </summary>
+                           <div className="space-y-4 border-t border-zinc-800 p-4">
                          <div>
                             <label className="text-[10px] text-zinc-500 font-bold mb-2 block">{formCopy.secondaryGoals}</label>
                             <div className="flex flex-wrap gap-2 p-2 rounded-xl">
@@ -4474,11 +4509,17 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                                 />
                             </div>
                          </div>
+                           </div>
+                         </details>
                     </div>
 
-                    {/* Section: Agenda */}
-                    <div className="space-y-4" id="error-container-agenda">
-                         <h4 className="text-xs font-bold text-mvp-gold uppercase tracking-wider">{formCopy.schedule}</h4>
+                    {/* Optional recurring schedule. */}
+                    <details className="group overflow-hidden rounded-xl border border-zinc-800 bg-black/25" id="error-container-agenda">
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 text-sm font-black text-white">
+                        <span>{formCopy.schedule} <span className="ml-2 text-[10px] font-bold text-zinc-500">{language === 'en' ? 'Optional' : 'Opcional'}</span></span>
+                        <ChevronDown size={17} className="text-zinc-500 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="space-y-4 border-t border-zinc-800 p-4">
                          <div>
                             <label className="text-[10px] text-zinc-500 font-bold mb-2 block">{formCopy.trainingDays}</label>
                             {errors.trainingDays && <p className="text-red-500 text-xs font-semibold mb-2">{errors.trainingDays}</p>}
@@ -4532,7 +4573,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                                 </div>
                             </div>
                          </div>
-                    </div>
+                      </div>
+                    </details>
 
                     {/* Section: Pago (Solo visible al crear, al editar se usa la tab de pagos) */}
                     {!initialData && (
@@ -4540,7 +4582,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                             <h4 className="text-xs font-bold text-mvp-gold uppercase tracking-wider">{formCopy.paymentPlan}</h4>
                             <div>
                                 <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">$</span>
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">S/</span>
                                     <input 
                                         type="number" 
                                         value={formData.fee} 
@@ -4556,14 +4598,35 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                                 </div>
                                 {errors.fee && <p className="text-red-500 text-xs mt-1 font-semibold">{errors.fee}</p>}
                             </div>
+                            <div>
+                              <label className="mb-2 block text-[10px] font-bold uppercase text-zinc-500">{language === 'en' ? 'Initial payment' : 'Pago inicial'}</label>
+                              <div className="grid grid-cols-3 gap-2 rounded-xl border border-zinc-800 bg-black/35 p-1.5">
+                                {([
+                                  ['unregistered', language === 'en' ? 'Not yet' : 'Aún no'],
+                                  ['paid', language === 'en' ? 'Paid today' : 'Pagó hoy'],
+                                  ['tomorrow', language === 'en' ? 'Tomorrow' : 'Paga mañana']
+                                ] as const).map(([value, label]) => (
+                                  <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => setFormData(current => ({ ...current, initialPaymentState: value }))}
+                                    className={`min-h-10 rounded-lg px-2 text-[10px] font-black transition-colors ${formData.initialPaymentState === value ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:bg-zinc-800 hover:text-white'}`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                         </div>
                     )}
 
                     {/* Section: Salud / notas opcionales */}
-                    <div className="space-y-4">
-                         <h4 className="text-xs font-bold text-mvp-gold uppercase tracking-wider">
-                            {language === 'es' ? 'Salud y notas opcionales' : 'Health and optional notes'}
-                         </h4>
+                    <details className="group overflow-hidden rounded-xl border border-zinc-800 bg-black/25">
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 text-sm font-black text-white">
+                        <span>{language === 'es' ? 'Salud y notas' : 'Health and notes'} <span className="ml-2 text-[10px] font-bold text-zinc-500">{language === 'en' ? 'Optional' : 'Opcional'}</span></span>
+                        <ChevronDown size={17} className="text-zinc-500 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="space-y-4 border-t border-zinc-800 p-4">
                          <div>
                              <label className="text-[10px] text-zinc-500 font-bold mb-1 block">{formCopy.medical}</label>
                              <textarea
@@ -4573,7 +4636,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                                 placeholder={formCopy.medicalPlaceholder}
                              />
                          </div>
-                    </div>
+                      </div>
+                    </details>
 
                     {/* Section: Datos opcionales */}
                     <div className={`rounded-xl border ${errors.email ? 'border-red-500 bg-red-950/10' : 'border-zinc-800 bg-black/30'} overflow-hidden`}>
@@ -4742,13 +4806,9 @@ const App = () => {
     });
   };
 
-  const [loading, _setLoadingRaw] = useState(() => {
-    try {
-      const cached = localStorage.getItem('mvptrainer_cached_user');
-      if (cached) return false; // Instantly load if user exists in cache
-    } catch (e) {}
-    return true;
-  });
+  // A cached identity speeds up recovery, but it must never render private data
+  // before Auth confirms that the browser still owns a valid session.
+  const [loading, _setLoadingRaw] = useState(true);
   const setLoading = (val: boolean) => {
     _setLoadingRaw(prev => prev === val ? prev : val);
   };
@@ -4764,13 +4824,7 @@ const App = () => {
     _setIsSyncingSessionRaw(prev => prev === val ? prev : val);
   };
 
-  const [authChecked, _setAuthCheckedRaw] = useState(() => {
-    try {
-      const cached = localStorage.getItem('mvptrainer_cached_user');
-      if (cached) return true; // Instantly mark checked if cache exists
-    } catch (e) {}
-    return false;
-  });
+  const [authChecked, _setAuthCheckedRaw] = useState(false);
   const setAuthChecked = (val: boolean) => {
     _setAuthCheckedRaw(prev => prev === val ? prev : val);
   };
@@ -4921,7 +4975,7 @@ const App = () => {
   // Check URL on load for public profile or checkout redirections
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const trainerId = urlParams.get('trainerId');
+    const trainerId = urlParams.get('trainer') || urlParams.get('trainerId');
     const sessionId = urlParams.get('session_id');
     
     if (sessionId) {
@@ -4960,6 +5014,7 @@ const App = () => {
             setIsReconnecting(true);
           }
           if (user) {
+            setAuthStatus('authenticated');
             setLoading(false);
             setAuthChecked(true);
           }
@@ -5027,32 +5082,33 @@ const App = () => {
           applyBrandingToTheme(normalizedUser.branding);
           requestNotificationPermission();
         } else {
-          // Si getSession/getCurrentUser falla pero ya hay un usuario en caché local, NO destruirlo
-          const cached = localStorage.getItem('mvptrainer_cached_user');
-          if (cached) {
-            if ((import.meta as any).env?.DEV) {
-              appLog("TEMP SESSION LOSS IGNORED: No user returned during init, but active cached session found. Keeping state.");
-            }
-            if (!navigator.onLine) {
-              setIsReconnecting(true);
-            }
-            setIsRecoveringSession(true);
-            setAuthStatus('authenticated');
-            setUser((current: AppUser | null) => current ? markSubscriptionSyncFailed(current) : current);
-          } else {
-            if ((import.meta as any).env?.DEV) {
-                appLog("AUTH INIT (REAL NULL): No user found and no local cache, setting unauthenticated");
-            }
-            setUser(null);
-            localStorage.removeItem('mvptrainer_cached_user');
-            setAuthStatus('unauthenticated');
+          if ((import.meta as any).env?.DEV) {
+            appLog("AUTH INIT: Auth confirmed that there is no active session.");
           }
+          const cachedUserId = latestUserRef.current?.uid;
+          if (cachedUserId) {
+            localStorage.removeItem(getClientsCacheKey(cachedUserId));
+          }
+          setUser(null);
+          _setClientsRaw([]);
+          setBillingRecords([]);
+          localStorage.removeItem('mvptrainer_cached_user');
+          lastValidUserRef.current = null;
+          stableTrainerIdRef.current = null;
+          setIsRecoveringSession(false);
+          setAuthStatus('unauthenticated');
         }
       } catch (error) {
         if ((import.meta as any).env?.DEV) {
             console.error("AUTH INIT ERROR:", error);
         }
-        setUser((current: AppUser | null) => current ? markSubscriptionSyncFailed(current) : current);
+        if (latestUserRef.current) {
+          setAuthStatus('authenticated');
+          setIsRecoveringSession(true);
+          setUser((current: AppUser | null) => current ? markSubscriptionSyncFailed(current) : current);
+        } else {
+          setAuthStatus('degraded');
+        }
       } finally {
         if (mounted) {
           setAuthChecked(true);
@@ -5096,9 +5152,11 @@ const App = () => {
           setAuthChecked(true);
           setLoading(false);
       } else {
-          // Si u es null, evaluamos según la regla estricta:
-          // SOLO ejecutar logout cuando event === "SIGNED_OUT" o "USER_DELETED"
-          if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          const confirmsMissingSession = event === 'INITIAL_SESSION'
+            || event === 'SIGNED_OUT'
+            || event === 'USER_DELETED';
+
+          if (confirmsMissingSession) {
               if ((import.meta as any).env?.DEV) {
                   appLog("REAL SIGN OUT: Auth system confirms exit event.");
               }
@@ -5125,7 +5183,8 @@ const App = () => {
               setIsReconnecting(false);
               setIsRecoveringSession(false);
           } else {
-              // Cualquier otro tipo de evento (flickers, reconnect, timeout, token_refreshed, initial_session null, unknown)
+              // Unknown/transient events can preserve the last confirmed user while
+              // the connection recovers. INITIAL_SESSION null is never transient.
               if ((import.meta as any).env?.DEV) {
                   appLog(`TEMP SESSION LOSS IGNORED: Event ${event} reported session status change, but SIGNED_OUT was not received. Keeping local state active.`);
               }
@@ -5147,7 +5206,7 @@ const App = () => {
   }, [isPublicRoute]);
 
   useEffect(() => {
-    if (!user?.uid || isPublicRoute) return;
+    if (!user?.uid || isPublicRoute || authStatus !== 'authenticated') return;
 
     const trainerId = user.uid;
     if (fastClientsLoadRef.current === trainerId && clientsLoadedOnceRef.current) return;
@@ -5191,11 +5250,11 @@ const App = () => {
     return () => {
       cancelled = true;
     };
-  }, [user?.uid, isPublicRoute]);
+  }, [user?.uid, isPublicRoute, authStatus]);
 
   useEffect(() => {
     const trainerId = user?.uid;
-    if (!trainerId || isPublicRoute) {
+    if (!trainerId || isPublicRoute || authStatus !== 'authenticated') {
       setBillingRecords([]);
       return;
     }
@@ -5218,11 +5277,11 @@ const App = () => {
     return () => {
       cancelled = true;
     };
-  }, [user?.uid, isPublicRoute]);
+  }, [user?.uid, isPublicRoute, authStatus]);
 
   useEffect(() => {
     const trainerId = user?.uid;
-    if (!trainerId || isPublicRoute) {
+    if (!trainerId || isPublicRoute || authStatus !== 'authenticated') {
       if (realtimeUnsubscribeRef.current) {
         if ((import.meta as any).env?.DEV) {
           appLog("REALTIME CLEANUP: no active trainer ID or public route");
@@ -5281,7 +5340,7 @@ const App = () => {
       // Intentionally bypassed to maintain live connection across React StrictMode & normal views re-rendering
       // Complete teardown of subscriptions ONLY happens on real LOGOUT (SIGNED_OUT/USER_DELETED) or real trainer ID changes.
     };
-  }, [user?.uid, isPublicRoute]);
+  }, [user?.uid, isPublicRoute, authStatus]);
 
   // Auto-clear reconnecting banner if user is valid, clients are loaded, and app is operational
   useEffect(() => {
@@ -5297,16 +5356,24 @@ const App = () => {
   // REMINDER ENGINE
   useEffect(() => {
     if (!user || clients.length === 0 || isPublicRoute) return;
-    
-    // Correr inmediatamente
-    checkReminders(user, clients, setToast);
+
+    const showReminderWithoutReplacingAction = (reminderToast: any) => {
+      setToast(current => current || reminderToast);
+    };
+
+    const initialTimer = window.setTimeout(() => {
+      checkReminders(user, clients, showReminderWithoutReplacingAction);
+    }, 1500);
 
     // Correr cada minuto
     const interval = setInterval(() => {
-        checkReminders(user, clients, setToast);
+        checkReminders(user, clients, showReminderWithoutReplacingAction);
     }, 60 * 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
   }, [user, clients, isPublicRoute]);
 
   // RENDER PUBLIC PAGE
@@ -5468,6 +5535,12 @@ const App = () => {
       const updated = { ...client, paymentInfo };
       setClients(prev => prev.map(item => item.id === updated.id ? updated : item));
       setSelectedClient(current => current?.id === updated.id ? updated : current);
+  };
+
+  const handleScheduleClientUpdate = async (clientId: string, data: Partial<Client>) => {
+      await dbProvider.updateClient(clientId, data);
+      setClients(previous => previous.map(client => client.id === clientId ? { ...client, ...data } : client));
+      setSelectedClient(current => current?.id === clientId ? { ...current, ...data } : current);
   };
   
   const handleUserUpdate = (updatedUser: AppUser) => {
@@ -6000,6 +6073,7 @@ const App = () => {
                 user={user}
                 clients={clients}
                 onOpenClient={(client: Client) => openClientDetail(client)}
+                onUpdateClient={handleScheduleClientUpdate}
                 onShowPaywall={() => setShowPaywall(true)}
                 onShowToast={(t) => setToast(t)}
                 language={language}

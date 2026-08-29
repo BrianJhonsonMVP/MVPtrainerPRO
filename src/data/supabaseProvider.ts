@@ -90,13 +90,18 @@ const mapBranding = (value: any): BrandingConfig | undefined => {
 const mapPublicProfile = (value: any): PublicProfile | undefined => {
   if (!value) return undefined;
   return {
+    professionalTitle: value.professional_title || value.professionalTitle || '',
     description: value.description || '',
     services: Array.isArray(value.services) ? value.services : [],
     targets: Array.isArray(value.targets) ? value.targets : [],
     whatsAppNumber: value.whatsapp_number || value.whatsAppNumber || '',
     backgroundColor: value.background_color || value.backgroundColor || '#07080d',
     profileImageUrl: value.avatar_url || value.profileImageUrl || '',
-    galleryImages: Array.isArray(value.gallery_images) ? value.gallery_images : []
+    galleryImages: Array.isArray(value.gallery_images) ? value.gallery_images : [],
+    modality: value.modality || 'ambas',
+    location: value.location || '',
+    slug: value.slug || '',
+    isPublished: Boolean(value.is_published ?? value.isPublished)
   };
 };
 
@@ -107,19 +112,21 @@ const toPublicProfileRow = (
   branding?: BrandingConfig
 ) => ({
   id: uid,
-  slug: uid,
-  professional_title: displayName,
+  slug: profile.slug?.trim() || uid,
+  professional_title: profile.professionalTitle?.trim() || displayName,
   description: profile.description?.trim() || null,
   avatar_url: profile.profileImageUrl || null,
   whatsapp_number: (profile.whatsAppNumber || '').replace(/\D/g, '') || null,
   cta_text: 'WhatsApp',
-  is_published: Boolean(profile.description?.trim() && (profile.whatsAppNumber || '').replace(/\D/g, '').length >= 7),
+  is_published: Boolean(profile.isPublished),
   brand_name: branding?.brandName?.trim() || displayName,
   logo_url: branding?.logoUrl || null,
   primary_color: branding?.primaryColor || '#8B5CF6',
   secondary_color: branding?.secondaryColor || '#050505',
   services: profile.services || [],
   targets: profile.targets || [],
+  modality: profile.modality || 'ambas',
+  location: profile.location?.trim() || null,
   background_color: profile.backgroundColor || '#07080d',
   updated_at: new Date().toISOString()
 });
@@ -567,7 +574,11 @@ export const supabaseProvider: IDBProvider = {
             });
         }, 0);
       } else {
-        if (event !== 'SIGNED_OUT' && (event as string) !== 'USER_DELETED' && activeUserFallback) {
+        const confirmsMissingSession = event === 'INITIAL_SESSION'
+          || event === 'SIGNED_OUT'
+          || (event as string) === 'USER_DELETED';
+
+        if (!confirmsMissingSession && activeUserFallback) {
           callback(markSubscriptionSyncing(activeUserFallback), event);
           return;
         }
@@ -705,7 +716,8 @@ export const supabaseProvider: IDBProvider = {
         },
         training: {
           days: data.trainingDays,
-          time: data.trainingTime
+          time: data.trainingTime,
+          exceptions: data.scheduleExceptions || []
         },
         profile: {
           age: data.age,
@@ -788,7 +800,8 @@ export const supabaseProvider: IDBProvider = {
         },
         training: {
           days: data.trainingDays || existingMeta.training?.days || [],
-          time: data.trainingTime || existingMeta.training?.time || ''
+          time: data.trainingTime !== undefined ? data.trainingTime : (existingMeta.training?.time || ''),
+          exceptions: data.scheduleExceptions !== undefined ? data.scheduleExceptions : (existingMeta.training?.exceptions || [])
         },
         profile: {
           age: data.age ?? existingMeta.profile?.age ?? null,
@@ -944,10 +957,11 @@ export const supabaseProvider: IDBProvider = {
 
   async getProfile(uid) {
     const client = requireSupabase();
+    const lookupColumn = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(uid) ? 'id' : 'slug';
     const { data, error } = await client
       .from('public_profiles')
-      .select('id, professional_title, description, avatar_url, whatsapp_number, is_published, brand_name, logo_url, primary_color, secondary_color, services, targets, background_color')
-      .eq('id', uid)
+      .select('id, slug, professional_title, description, avatar_url, whatsapp_number, is_published, brand_name, logo_url, primary_color, secondary_color, services, targets, background_color, modality, location')
+      .eq(lookupColumn, uid)
       .eq('is_published', true)
       .single();
 
@@ -974,10 +988,13 @@ export const supabaseProvider: IDBProvider = {
       notes: routine.summary || routine.description || ''
     };
 
-    const { error } = await client.from('routines').insert(payload).select().single();
+    const operation = routine.id
+      ? client.from('routines').update({ ...payload, source: 'manual', updated_at: new Date().toISOString() }).eq('id', routine.id).eq('trainer_id', authUser.id).eq('client_id', clientId)
+      : client.from('routines').insert(payload).select().single();
+    const { error } = await operation;
     if (error) throw error;
 
-    if (routine.source === 'ai') {
+    if (!routine.id && routine.source === 'ai') {
       return this.incrementTrainerUsage(authUser.id, 'routines');
     }
 
@@ -1005,10 +1022,13 @@ export const supabaseProvider: IDBProvider = {
       notes: diet.summary || diet.notes || ''
     };
 
-    const { error } = await client.from('diets').insert(payload).select().single();
+    const operation = diet.id
+      ? client.from('diets').update({ ...payload, source: 'manual', updated_at: new Date().toISOString() }).eq('id', diet.id).eq('trainer_id', authUser.id).eq('client_id', clientId)
+      : client.from('diets').insert(payload).select().single();
+    const { error } = await operation;
     if (error) throw error;
 
-    if (diet.source === 'ai') {
+    if (!diet.id && diet.source === 'ai') {
       return this.incrementTrainerUsage(authUser.id, 'diets');
     }
 
@@ -1162,6 +1182,7 @@ const mapClientToFrontend = (c: any, routines: any[] = [], dietPlansOrDiet: any 
     dietFocus: profile.dietFocus || meta.dietFocus || '',
     trainingDays: training.days || meta.trainingDays || [],
     trainingTime: training.time || meta.trainingTime,
+    scheduleExceptions: Array.isArray(training.exceptions) ? training.exceptions : [],
     routines: routines || [],
     dietPlan: dietPlans[0] || null,
     dietPlans,

@@ -41,6 +41,24 @@ export const parsePaymentDate = (value?: string | null) => {
   return Number.isFinite(date.getTime()) ? date : null;
 };
 
+export const toLocalDateInputValue = (value?: string | null) => {
+  const date = parsePaymentDate(value);
+  if (!date) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const fromLocalDateInputValue = (value?: string | null) => {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+};
+
 export const getPaymentDiffDays = (client: Client, today = new Date()) => {
   const dueDate = parsePaymentDate(client.paymentInfo?.nextPaymentAt);
   if (!dueDate) return null;

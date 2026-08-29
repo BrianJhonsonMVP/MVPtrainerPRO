@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrandingConfig, User } from '../types';
-import { CheckCircle2, Crown, ImagePlus, Loader2, Palette, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
+import { CheckCircle2, ImagePlus, Loader2, Palette, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
 import { dbProvider } from '../data';
 import {
   applyBrandingToTheme,
@@ -12,6 +12,7 @@ import {
 import { uploadTrainerAsset } from '../services/trainerAssetService';
 import { hasFullAccess } from '../services/subscriptionLogic';
 import PremiumLockOverlay from './PremiumLockOverlay';
+import { AppButton, IconButton, PrimaryButton } from './ui/Buttons';
 
 type AppLanguage = 'es' | 'en';
 
@@ -45,7 +46,7 @@ const COPY = {
     resetTitle: 'Restaurar marca original',
     lockedTitle: 'Personalizacion bloqueada',
     lockedDescription: 'Sube tu logo y adapta la identidad visual para presentar una experiencia profesional.',
-    lockedCta: 'Desbloquear Branding PRO'
+    lockedCta: 'Activar acceso'
   },
   en: {
     confirmTitle: 'Restore brand',
@@ -76,7 +77,7 @@ const COPY = {
     resetTitle: 'Restore original brand',
     lockedTitle: 'Branding locked',
     lockedDescription: 'Upload your logo and customize the visual identity for a professional client experience.',
-    lockedCta: 'Unlock Branding PRO'
+    lockedCta: 'Activate access'
   }
 };
 
@@ -193,11 +194,6 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({
           <h3 className="text-lg font-black text-white">{copy.title}</h3>
           <p className="text-sm text-zinc-500">{copy.subtitle}</p>
         </div>
-        {isPro && (
-          <span className="ml-auto flex items-center gap-1 rounded-md border border-violet-400/25 bg-violet-500/10 px-2 py-1 text-xs font-bold text-violet-300">
-            <Crown size={12} /> PRO
-          </span>
-        )}
       </header>
 
       <div className={`space-y-6 ${!isPro ? 'pro-locked-content' : ''}`}>
@@ -238,16 +234,19 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({
             </button>
             <input ref={logoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} disabled={uploadingLogo} />
             {config.logoUrl && (
-              <button
+              <AppButton
                 type="button"
                 onClick={() => {
                   setConfig(current => ({ ...current, logoUrl: '' }));
                   setFeedback(null);
                 }}
-                className="mt-2 flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-red-300"
+                compact
+                variant="tertiary"
+                icon={<Trash2 size={13} />}
+                className="mt-2 text-zinc-500 hover:text-red-300"
               >
-                <Trash2 size={13} /> {copy.removeLogo}
-              </button>
+                {copy.removeLogo}
+              </AppButton>
             )}
           </div>
         </div>
@@ -312,18 +311,18 @@ const BrandingSettings: React.FC<BrandingSettingsProps> = ({
         </div>
 
         <div className="flex gap-3">
-          <button
+          <PrimaryButton
             onClick={handleSave}
             disabled={saving || uploadingLogo || !isDirty}
-            className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg px-4 font-black transition-[filter,opacity] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
-            style={{ backgroundColor: config.primaryColor, color: previewTextColor }}
+            isLoading={saving}
+            icon={isDirty ? <Save size={18} /> : <CheckCircle2 size={18} />}
+            className="min-h-12 flex-1"
           >
-            {saving ? <Loader2 size={18} className="animate-spin" /> : isDirty ? <Save size={18} /> : <CheckCircle2 size={18} />}
             {saving ? copy.saving : isDirty ? copy.apply : copy.upToDate}
-          </button>
-          <button onClick={handleReset} disabled={saving} className="flex h-12 w-12 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-white" title={copy.resetTitle} aria-label={copy.resetTitle}>
+          </PrimaryButton>
+          <IconButton onClick={handleReset} disabled={saving} className="h-12 w-12" title={copy.resetTitle} aria-label={copy.resetTitle}>
             <RotateCcw size={18} />
-          </button>
+          </IconButton>
         </div>
         {isDirty && !feedback && <p className="text-center text-xs font-bold text-amber-300">{copy.pending}</p>}
       </div>

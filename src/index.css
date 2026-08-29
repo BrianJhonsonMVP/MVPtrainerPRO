@@ -1141,7 +1141,7 @@ html[data-dev-preview-mode] .dev-preview-safe-bottom {
   position: fixed;
   left: 16px;
   bottom: 16px;
-  z-index: 9999;
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1213,7 +1213,7 @@ html[data-dev-preview-mode] .dev-preview-safe-bottom {
 .dev-device-stage {
   position: fixed;
   inset: 0;
-  z-index: 9998;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: center;

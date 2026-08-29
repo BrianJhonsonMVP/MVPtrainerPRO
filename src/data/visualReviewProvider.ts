@@ -1,4 +1,4 @@
-import { BillingRecord, Client, DietPlan, Routine, User } from '../types';
+import { BillingRecord, Client, ClientPaymentInfo, DietPlan, Routine, User } from '../types';
 import { IDBProvider } from './dbInterface';
 
 const TRAINER_ID = 'visual-review-trainer';
@@ -82,13 +82,18 @@ const reviewUser: User = {
     secondaryColor: '#050505'
   },
   publicProfile: {
+    professionalTitle: 'Entrenador de fuerza y recomposición corporal',
     description: 'Entrenamiento personalizado para construir fuerza, salud y confianza.',
     services: ['Entrenamiento presencial', 'Asesoria online', 'Plan de alimentacion'],
     targets: ['Recomposicion corporal', 'Ganancia muscular', 'Perdida de grasa'],
     whatsAppNumber: '51999999999',
     backgroundColor: '#050505',
     profileImageUrl: '/brand/mvp-trainer-pro-logo.png',
-    galleryImages: []
+    galleryImages: [],
+    modality: 'ambas',
+    location: 'Lima, Perú',
+    slug: 'mvp-trainer-lima',
+    isPublished: true
   },
   trainerUsage: {
     trainer_id: TRAINER_ID,
@@ -171,18 +176,66 @@ export const visualReviewProvider: IDBProvider = {
     return client;
   },
   async updateClient(clientId, data) {
+    const previous = clients.find(client => client.id === clientId);
     clients = clients.map(client => client.id === clientId ? { ...client, ...data } : client);
+    if (previous && data.paymentInfo) {
+      const payment = data.paymentInfo as ClientPaymentInfo;
+      const previousDue = previous.paymentInfo?.nextPaymentAt?.slice(0, 10);
+      const nextDue = payment.nextPaymentAt?.slice(0, 10);
+      const hasNewPayment = payment.status === 'al_dia'
+        && Boolean(payment.lastPaidAt)
+        && payment.lastPaidAt !== previous.paymentInfo?.lastPaidAt;
+      const openRecord = billingRecords.find(record => record.clientId === clientId && record.status !== 'paid');
+
+      if (hasNewPayment) {
+        if (openRecord) {
+          openRecord.status = 'paid';
+          openRecord.paidAt = payment.lastPaidAt;
+          openRecord.amount = Number(payment.lastPaymentAmount) || Number(payment.monthlyFee) || 0;
+        } else {
+          billingRecords.push({
+            id: `review-paid-${Date.now()}`,
+            clientId,
+            trainerId: previous.trainerId,
+            amount: Number(payment.lastPaymentAmount) || Number(payment.monthlyFee) || 0,
+            dueDate: previousDue || payment.lastPaidAt!,
+            paidAt: payment.lastPaidAt,
+            status: 'paid'
+          });
+        }
+      }
+
+      if (nextDue && payment.status !== 'sin_registro') {
+        const nextOpen = billingRecords.find(record => record.clientId === clientId && record.status !== 'paid');
+        if (nextOpen) {
+          nextOpen.dueDate = nextDue;
+          nextOpen.amount = Number(payment.monthlyFee) || 0;
+          nextOpen.paidAt = null;
+          nextOpen.status = payment.status === 'atrasado' ? 'late' : 'pending';
+        } else {
+          billingRecords.push({
+            id: `review-due-${Date.now()}`,
+            clientId,
+            trainerId: previous.trainerId,
+            amount: Number(payment.monthlyFee) || 0,
+            dueDate: nextDue,
+            paidAt: null,
+            status: payment.status === 'atrasado' ? 'late' : 'pending'
+          });
+        }
+      }
+    }
   },
   async deleteClient(clientId) { clients = clients.filter(client => client.id !== clientId); },
   async getBillingRecords() { return billingRecords.map(record => ({ ...record })); },
   async updateUser(_userId, data) { Object.assign(reviewUser, data); return reviewUser; },
   async getProfile() { return reviewUser; },
   async saveRoutine(_trainerId, clientId, routine) {
-    clients = clients.map(client => client.id === clientId ? { ...client, routines: [routine, ...client.routines] } : client);
+    clients = clients.map(client => client.id === clientId ? { ...client, routines: routine.id && client.routines.some(item => item.id === routine.id) ? client.routines.map(item => item.id === routine.id ? { ...routine, source: 'manual' } : item) : [routine, ...client.routines] } : client);
     return routine;
   },
   async saveDiet(_trainerId, clientId, diet) {
-    clients = clients.map(client => client.id === clientId ? { ...client, dietPlan: diet, dietPlans: [diet, ...(client.dietPlans || [])] } : client);
+    clients = clients.map(client => client.id === clientId ? { ...client, dietPlan: diet, dietPlans: diet.id && (client.dietPlans || []).some(item => item.id === diet.id) ? (client.dietPlans || []).map(item => item.id === diet.id ? { ...diet, source: 'manual' } : item) : [diet, ...(client.dietPlans || [])] } : client);
     return diet;
   },
   async getRoutines(clientId) { return clients.find(client => client.id === clientId)?.routines || []; },

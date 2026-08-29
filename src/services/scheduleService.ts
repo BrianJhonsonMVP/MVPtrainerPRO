@@ -1,4 +1,4 @@
-import { Client } from '../types';
+import { Client, ScheduleException } from '../types';
 
 export type AppLanguage = 'es' | 'en';
 export type SessionStatus = 'upcoming' | 'live' | 'completed';
@@ -12,6 +12,7 @@ export interface TrainerSession {
   durationMinutes: number;
   minutesUntilStart: number;
   status: SessionStatus;
+  exception?: ScheduleException;
 }
 
 export interface DaySchedule {
@@ -66,10 +67,24 @@ export const normalizeDayName = (value = '') =>
 
 export const isActiveClient = (client: Client) => client.status === 'active';
 
+export const toScheduleDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getScheduleException = (client: Client, date: Date) =>
+  client.scheduleExceptions?.find(item => item.date === toScheduleDateKey(date)) || null;
+
 export const trainsOnDate = (client: Client, date = new Date()) =>
-  isActiveClient(client) &&
-  Array.isArray(client.trainingDays) &&
-  client.trainingDays.some(day => DAY_ALIASES[normalizeDayName(day)] === date.getDay());
+  isActiveClient(client) && (() => {
+    const exception = getScheduleException(client, date);
+    if (exception?.type === 'cancelled') return false;
+    if (exception?.type === 'rescheduled') return true;
+    return Array.isArray(client.trainingDays)
+      && client.trainingDays.some(day => DAY_ALIASES[normalizeDayName(day)] === date.getDay());
+  })();
 
 const parseClockMinutes = (value = '') => {
   const normalized = value.trim().toUpperCase();
@@ -119,20 +134,25 @@ export const getClientSessionForDate = (
   now = new Date()
 ): TrainerSession | null => {
   if (!trainsOnDate(client, date)) return null;
-  const range = parseTrainingRange(client.trainingTime);
+  const exception = getScheduleException(client, date);
+  const exceptionRange = exception?.type === 'rescheduled' && exception.startTime
+    ? `${exception.startTime}${exception.endTime ? ` - ${exception.endTime}` : ''}`
+    : null;
+  const range = parseTrainingRange(exceptionRange || client.trainingTime);
   if (!range) return null;
 
   const start = atMinutes(date, range.startMinutes);
   const end = atMinutes(date, range.endMinutes);
   return {
-    id: `${client.id}-${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`,
+    id: `${client.id}-${toScheduleDateKey(date)}`,
     client,
     date,
     start,
     end,
     durationMinutes: Math.max(0, Math.round((end.getTime() - start.getTime()) / MINUTE_MS)),
     minutesUntilStart: Math.ceil((start.getTime() - now.getTime()) / MINUTE_MS),
-    status: resolveSessionStatus(start, end, now)
+    status: resolveSessionStatus(start, end, now),
+    exception: exception || undefined
   };
 };
 

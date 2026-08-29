@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
+  CalendarClock,
   CalendarDays,
+  CalendarX2,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock3,
+  RotateCcw,
   TimerReset,
-  UserRound
+  UserRound,
+  X
 } from 'lucide-react';
 import { Client, User } from '../types';
 import { hasFullAccess } from '../services/subscriptionLogic';
@@ -20,15 +25,17 @@ import {
   formatSessionTime,
   getDaySchedule,
   getNextSession,
-  getWeekSchedule
+  getWeekSchedule,
+  toScheduleDateKey
 } from '../services/scheduleService';
 import PremiumLockOverlay from './PremiumLockOverlay';
-import { IconButton, SecondaryButton, WhatsAppButton } from './ui/Buttons';
+import { AppButton, IconButton, PrimaryButton, SecondaryButton, WhatsAppButton } from './ui/Buttons';
 
 interface DailyScheduleProps {
   user: User;
   clients: Client[];
   onOpenClient: (client: Client) => void;
+  onUpdateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
   onShowPaywall: () => void;
   onShowToast?: (toast: { title: string; message: string; type: 'success' | 'warning' | 'error' }) => void;
   language?: AppLanguage;
@@ -63,11 +70,22 @@ const COPY = {
     hours: 'horas',
     lockedTitle: 'Agenda Inteligente Bloqueada',
     lockedDescription: 'Organiza tu dia, revisa tus proximas sesiones y contacta a cada cliente desde un solo lugar.',
-    lockedCta: 'Desbloquear Agenda PRO',
+    lockedCta: 'Activar acceso',
     noPhoneTitle: 'Telefono no registrado',
     noPhoneMessage: 'Agrega el WhatsApp del cliente para enviar recordatorios.',
     reminderReady: 'Recordatorio preparado',
-    syncing: 'Sincronizando tu cuenta...'
+    syncing: 'Sincronizando tu cuenta...',
+    previous: 'Anterior',
+    nextPeriod: 'Siguiente',
+    moveSession: 'Mover esta sesión',
+    cancelSession: 'Cancelar solo hoy',
+    restoreSession: 'Restaurar horario',
+    sessionAdjusted: 'Sesión ajustada',
+    sessionCancelled: 'La sesión se canceló solo para esta fecha.',
+    sessionMoved: 'El nuevo horario quedó guardado solo para esta fecha.',
+    editSessionTitle: 'Ajustar esta sesión',
+    editSessionHint: 'El horario semanal del cliente no cambiará.',
+    saveMove: 'Guardar nuevo horario'
   },
   en: {
     title: 'My Schedule',
@@ -97,11 +115,22 @@ const COPY = {
     hours: 'hours',
     lockedTitle: 'Smart Schedule Locked',
     lockedDescription: 'Organize your day, review upcoming sessions, and contact every client from one place.',
-    lockedCta: 'Unlock Schedule PRO',
+    lockedCta: 'Activate access',
     noPhoneTitle: 'No phone number',
     noPhoneMessage: 'Add the client WhatsApp number to send reminders.',
     reminderReady: 'Reminder ready',
-    syncing: 'Syncing your account...'
+    syncing: 'Syncing your account...',
+    previous: 'Previous',
+    nextPeriod: 'Next',
+    moveSession: 'Move this session',
+    cancelSession: 'Cancel today only',
+    restoreSession: 'Restore schedule',
+    sessionAdjusted: 'Session updated',
+    sessionCancelled: 'The session was cancelled only for this date.',
+    sessionMoved: 'The new time was saved only for this date.',
+    editSessionTitle: 'Adjust this session',
+    editSessionHint: "The client's weekly schedule will not change.",
+    saveMove: 'Save new time'
   }
 };
 
@@ -141,6 +170,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
   user,
   clients,
   onOpenClient,
+  onUpdateClient,
   onShowPaywall,
   onShowToast,
   language = 'es'
@@ -152,14 +182,17 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
   const canRenderPremium = isPro;
   const [mode, setMode] = useState<'today' | 'week'>('today');
   const [now, setNow] = useState(() => new Date());
+  const [referenceDate, setReferenceDate] = useState(() => new Date());
+  const [editingSession, setEditingSession] = useState<TrainerSession | null>(null);
+  const [savingException, setSavingException] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const todaySchedule = useMemo(() => getDaySchedule(clients, now, now), [clients, now]);
-  const weekSchedule = useMemo(() => getWeekSchedule(clients, now, now), [clients, now]);
+  const todaySchedule = useMemo(() => getDaySchedule(clients, referenceDate, now), [clients, referenceDate, now]);
+  const weekSchedule = useMemo(() => getWeekSchedule(clients, referenceDate, now), [clients, referenceDate, now]);
   const nextSession = getNextSession(todaySchedule.sessions);
   const locale = activeLanguage === 'en' ? 'en-US' : 'es-PE';
 
@@ -170,6 +203,35 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
     }
     openWhatsApp(session.client, buildWorkoutReminderMessage(session, activeLanguage));
     onShowToast?.({ title: copy.reminderReady, message: session.client.name, type: 'success' });
+  };
+
+  const changePeriod = (direction: -1 | 1) => {
+    setReferenceDate(current => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + direction * (mode === 'week' ? 7 : 1));
+      return next;
+    });
+  };
+
+  const saveException = async (session: TrainerSession, type: 'cancelled' | 'rescheduled', startTime?: string, endTime?: string) => {
+    setSavingException(true);
+    try {
+      const date = toScheduleDateKey(session.date);
+      const exceptions = (session.client.scheduleExceptions || []).filter(item => item.date !== date);
+      exceptions.push({ id: `${session.client.id}-${date}`, date, type, startTime, endTime, createdAt: new Date().toISOString() });
+      await onUpdateClient(session.client.id, { scheduleExceptions: exceptions });
+      onShowToast?.({ title: copy.sessionAdjusted, message: type === 'cancelled' ? copy.sessionCancelled : copy.sessionMoved, type: 'success' });
+      setEditingSession(null);
+    } finally {
+      setSavingException(false);
+    }
+  };
+
+  const restoreSession = async (session: TrainerSession) => {
+    const date = toScheduleDateKey(session.date);
+    await onUpdateClient(session.client.id, { scheduleExceptions: (session.client.scheduleExceptions || []).filter(item => item.date !== date) });
+    onShowToast?.({ title: copy.sessionAdjusted, message: copy.restoreSession, type: 'success' });
+    setEditingSession(null);
   };
 
   return (
@@ -183,11 +245,15 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
             <h1 className="text-2xl font-black text-white">{copy.title}</h1>
             <p className="mt-1 max-w-xl text-sm leading-relaxed text-zinc-500">{copy.subtitle}</p>
             <p className="mt-2 text-xs font-bold capitalize text-zinc-300">
-              {now.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
+              {referenceDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
             </p>
           </div>
         </div>
-        <div className="module-segmented inline-grid grid-cols-2 rounded-xl border border-zinc-800 bg-zinc-950 p-1">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <IconButton type="button" onClick={() => changePeriod(-1)} aria-label={copy.previous} title={copy.previous}><ChevronLeft size={17} /></IconButton>
+          <AppButton type="button" variant="tertiary" compact onClick={() => setReferenceDate(new Date())}>{copy.today}</AppButton>
+          <IconButton type="button" onClick={() => changePeriod(1)} aria-label={copy.nextPeriod} title={copy.nextPeriod}><ChevronRight size={17} /></IconButton>
+          <div className="module-segmented inline-grid grid-cols-2 rounded-xl border border-zinc-800 bg-zinc-950 p-1">
           {(['today', 'week'] as const).map(option => (
             <button
               key={option}
@@ -201,6 +267,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
               {copy[option]}
             </button>
           ))}
+          </div>
         </div>
       </header>
 
@@ -293,6 +360,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
                       language={activeLanguage}
                       onOpen={() => onOpenClient(session.client)}
                       onWhatsApp={() => sendReminder(session)}
+                      onAdjust={() => setEditingSession(session)}
                     />
                   </React.Fragment>
                 ))}
@@ -300,6 +368,18 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
             )}
           </section>
         </div>
+      )}
+      {editingSession && (
+        <SessionExceptionDialog
+          session={editingSession}
+          language={activeLanguage}
+          copy={copy}
+          saving={savingException}
+          onClose={() => setEditingSession(null)}
+          onMove={(start, end) => saveException(editingSession, 'rescheduled', start, end)}
+          onCancel={() => saveException(editingSession, 'cancelled')}
+          onRestore={editingSession.exception ? () => restoreSession(editingSession) : undefined}
+        />
       )}
     </div>
   );
@@ -340,12 +420,14 @@ const SessionRow = ({
   session,
   language,
   onOpen,
-  onWhatsApp
+  onWhatsApp,
+  onAdjust
 }: {
   session: TrainerSession;
   language: AppLanguage;
   onOpen: () => void;
   onWhatsApp: () => void;
+  onAdjust: () => void;
 }) => {
   const copy = COPY[language];
   const statusKey = session.status === 'upcoming' ? 'upcoming' : session.status;
@@ -365,10 +447,54 @@ const SessionRow = ({
       <div className="flex items-center justify-between gap-2 sm:justify-end">
         <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${sessionTone(session.status)}`}>{copy[statusKey]}</span>
         <WhatsAppButton type="button" onClick={onWhatsApp} title="WhatsApp" aria-label="WhatsApp" iconOnly />
+        <IconButton type="button" onClick={onAdjust} title={copy.moveSession} aria-label={copy.moveSession}>
+          <CalendarClock size={16} />
+        </IconButton>
         <IconButton type="button" onClick={onOpen} title={copy.profile} aria-label={copy.profile}>
           <ChevronRight size={17} />
         </IconButton>
       </div>
+    </div>
+  );
+};
+
+const SessionExceptionDialog = ({ session, language, copy, saving, onClose, onMove, onCancel, onRestore }: {
+  session: TrainerSession;
+  language: AppLanguage;
+  copy: typeof COPY.es;
+  saving: boolean;
+  onClose: () => void;
+  onMove: (start: string, end: string) => void;
+  onCancel: () => void;
+  onRestore?: () => void;
+}) => {
+  const toInputTime = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const [start, setStart] = useState(() => toInputTime(session.start));
+  const [end, setEnd] = useState(() => toInputTime(session.end));
+  const validRange = Boolean(start && end && start < end);
+  const locale = language === 'en' ? 'en-US' : 'es-PE';
+
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-end bg-black/75 p-0 backdrop-blur-sm sm:place-items-center sm:p-4" role="presentation">
+      <section className="w-full max-w-md rounded-t-2xl border border-zinc-700 bg-[#0d1119] p-5 shadow-2xl sm:rounded-2xl" role="dialog" aria-modal="true">
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-white">{copy.editSessionTitle}</h2>
+            <p className="mt-1 text-xs text-zinc-500">{session.client.name} · {session.date.toLocaleDateString(locale, { day: 'numeric', month: 'long' })}</p>
+          </div>
+          <IconButton type="button" onClick={onClose} aria-label="Cerrar"><X size={17} /></IconButton>
+        </header>
+        <p className="mt-4 rounded-lg border border-violet-500/20 bg-violet-500/8 px-3 py-2 text-xs text-violet-200">{copy.editSessionHint}</p>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="rounded-xl border border-zinc-800 bg-black/30 p-3 text-[10px] font-black uppercase text-zinc-500">{copy.start}<input type="time" value={start} onChange={event => setStart(event.target.value)} className="mt-2 w-full bg-transparent text-base font-black text-white outline-none" /></label>
+          <label className="rounded-xl border border-zinc-800 bg-black/30 p-3 text-[10px] font-black uppercase text-zinc-500">{copy.end}<input type="time" value={end} onChange={event => setEnd(event.target.value)} className="mt-2 w-full bg-transparent text-base font-black text-white outline-none" /></label>
+        </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <PrimaryButton type="button" disabled={!validRange || saving} isLoading={saving} onClick={() => onMove(start, end)} icon={<CalendarClock size={16} />}>{copy.saveMove}</PrimaryButton>
+          <AppButton type="button" disabled={saving} onClick={onCancel} variant="danger" icon={<CalendarX2 size={16} />}>{copy.cancelSession}</AppButton>
+          {onRestore && <SecondaryButton type="button" disabled={saving} onClick={onRestore} icon={<RotateCcw size={16} />} className="sm:col-span-2">{copy.restoreSession}</SecondaryButton>}
+        </div>
+      </section>
     </div>
   );
 };

@@ -41,6 +41,7 @@ export interface BrandingConfig {
 }
 
 export interface PublicProfile {
+  professionalTitle?: string;
   description: string;
   services: string[];
   targets: string[];
@@ -48,6 +49,19 @@ export interface PublicProfile {
   backgroundColor: string;
   profileImageUrl: string;
   galleryImages: string[];
+  modality?: 'presencial' | 'online' | 'ambas';
+  location?: string;
+  slug?: string;
+  isPublished?: boolean;
+}
+
+export interface ScheduleException {
+  id: string;
+  date: string;
+  type: 'cancelled' | 'rescheduled';
+  startTime?: string;
+  endTime?: string;
+  createdAt: string;
 }
 
 export interface TrainerUsage {
@@ -165,6 +179,7 @@ export interface Client {
   dietFocus?: string;
   trainingDays: string[];
   trainingTime: string | null;
+  scheduleExceptions?: ScheduleException[];
   routines: Routine[];
   dietPlan?: DietPlan; // Fixed any to DietPlan
   dietPlans?: DietPlan[];

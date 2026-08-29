@@ -12,12 +12,14 @@ import {
   isActivePro,
   isSubscriptionLocked
 } from '../src/services/subscriptionLogic';
-import { getDaySchedule } from '../src/services/scheduleService';
+import { getDaySchedule, toScheduleDateKey } from '../src/services/scheduleService';
 import {
   buildPaymentEventsForMonth,
+  fromLocalDateInputValue,
   getMonthlyPaymentSummary,
   markPaymentPaid,
-  markPaymentPending
+  markPaymentPending,
+  toLocalDateInputValue
 } from '../src/services/paymentService';
 import { pauseClientService, reactivateClientService, finishClientService } from '../src/services/clientService';
 import { isActiveClient } from '../src/services/scheduleService';
@@ -144,6 +146,31 @@ assert.equal(schedule.sessions.length, 1);
 assert.equal(schedule.scheduledMinutes, 60);
 assert.equal(schedule.sessions[0].client.id, 'client-1');
 
+const cancelledSchedule = getDaySchedule([makeClient({
+  scheduleExceptions: [{
+    id: 'cancelled-monday',
+    date: toScheduleDateKey(monday),
+    type: 'cancelled',
+    createdAt: confirmedAt.toISOString()
+  }]
+})], monday, monday);
+assert.equal(cancelledSchedule.sessions.length, 0, 'A one-day cancellation must hide only that session.');
+
+const tuesday = new Date('2026-07-28T12:00:00.000Z');
+const movedSchedule = getDaySchedule([makeClient({
+  scheduleExceptions: [{
+    id: 'moved-tuesday',
+    date: toScheduleDateKey(tuesday),
+    type: 'rescheduled',
+    startTime: '08:30',
+    endTime: '09:45',
+    createdAt: confirmedAt.toISOString()
+  }]
+})], tuesday, tuesday);
+assert.equal(movedSchedule.sessions.length, 1, 'A one-day reschedule may add a session outside the recurring weekday.');
+assert.equal(movedSchedule.sessions[0].durationMinutes, 75);
+assert.equal(movedSchedule.sessions[0].start.getHours(), 8);
+
 const paidClient = makeClient({
   id: 'client-paid',
   name: 'Carlos',
@@ -210,6 +237,10 @@ assert.equal(paid.status, 'al_dia');
 assert.ok(paid.lastPaidAt);
 assert.ok(paid.nextPaymentAt && new Date(paid.nextPaymentAt) > confirmedAt);
 
+const localPaymentDate = fromLocalDateInputValue('2026-08-31');
+assert.ok(localPaymentDate);
+assert.equal(toLocalDateInputValue(localPaymentDate), '2026-08-31', 'A date chosen in the UI must preserve its local calendar day.');
+
 const threeMonthPayment = markPaymentPaid(
   { ...makeClient({}).paymentInfo, monthlyFee: 200, nextPaymentAt: null },
   new Date('2026-01-31T12:00:00.000Z'),
@@ -243,6 +274,8 @@ console.log(JSON.stringify({
   freeIsolation: 'passed',
   confirmedCancellation: 'passed',
   sessions: schedule.sessions.length,
+  scheduleExceptions: 'passed',
+  localPaymentDates: 'passed',
   payments: {
     collected: paymentSummary.collected,
     pending: paymentSummary.pending,

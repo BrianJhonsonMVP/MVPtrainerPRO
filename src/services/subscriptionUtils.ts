@@ -25,7 +25,7 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
 
   if (isSyncing) {
     return {
-      label: type === 'pro' && isActive ? 'Plan PRO' : 'Sincronizando tu plan…',
+      label: type === 'pro' && isActive ? 'Acceso activo' : 'Sincronizando tu acceso…',
       color: type === 'pro' && isActive ? 'text-mvp-gold' : 'text-zinc-300',
       detail: 'Sincronizando tu cuenta…',
       bg: type === 'pro' && isActive ? 'bg-mvp-gold/10' : 'bg-zinc-900'
@@ -34,7 +34,7 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
 
   if (!type) {
     return {
-      label: 'Sincronizando tu plan…',
+      label: 'Sincronizando tu acceso…',
       color: 'text-zinc-300',
       detail: 'Sincronizando tu cuenta…',
       bg: 'bg-zinc-900'
@@ -43,7 +43,7 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
 
   if (type === 'pro') {
     return {
-      label: isActive ? 'Plan PRO' : 'Plan PRO (Expirado)',
+      label: isActive ? 'Acceso activo' : 'Acceso vencido',
       color: isActive ? 'text-mvp-gold' : 'text-zinc-500',
       detail: isActive ? 'Acceso total ilimitado' : 'Tu suscripción ha vencido',
       bg: isActive ? 'bg-mvp-gold/10' : 'bg-zinc-900'
@@ -52,7 +52,7 @@ export const getPlanStatusLabel = (user: User | null): PlanStatus => {
 
   if (type === 'trial') {
     return {
-      label: isActive ? 'Prueba Gratuita' : 'Acceso vencido',
+      label: isActive ? 'Prueba de 21 días' : 'Acceso vencido',
       color: isActive ? 'text-violet-300' : 'text-zinc-500',
       detail: isActive ? 'Acceso completo durante 21 días' : 'Tus datos están protegidos hasta activar tu plan',
       bg: isActive ? 'bg-violet-500/10' : 'bg-zinc-900'

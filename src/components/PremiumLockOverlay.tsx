@@ -15,7 +15,7 @@ const PremiumLockOverlay: React.FC<PremiumLockOverlayProps> = ({
   description,
   cta,
   onUnlock,
-  eyebrow = 'MVP PRO'
+  eyebrow = 'MVP TRAINER'
 }) => (
   <motion.div
     className="premium-lock-overlay absolute inset-0 z-20 flex items-center justify-center p-5 sm:p-8"
