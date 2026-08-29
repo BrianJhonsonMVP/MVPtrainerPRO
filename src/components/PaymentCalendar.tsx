@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  MessageCircle,
   TriangleAlert,
   UserRound
 } from 'lucide-react';
@@ -23,6 +22,7 @@ import {
 import { AppLanguage } from '../services/scheduleService';
 import PremiumLockOverlay from './PremiumLockOverlay';
 import QuickPaymentDialog from './QuickPaymentDialog';
+import { IconButton, PrimaryButton, SecondaryButton, WhatsAppButton } from './ui/Buttons';
 
 interface Props {
   user: User;
@@ -243,11 +243,11 @@ const PaymentCalendar: React.FC<Props> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => changeMonth(-1)} aria-label={copy.previousMonth} title={copy.previousMonth} className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"><ChevronLeft size={18} /></button>
+          <IconButton type="button" onClick={() => changeMonth(-1)} aria-label={copy.previousMonth} title={copy.previousMonth}><ChevronLeft size={18} /></IconButton>
           <span className="min-w-[150px] rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-center text-xs font-black capitalize text-white">
             {month.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}
           </span>
-          <button type="button" onClick={() => changeMonth(1)} aria-label={copy.nextMonth} title={copy.nextMonth} className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white"><ChevronRight size={18} /></button>
+          <IconButton type="button" onClick={() => changeMonth(1)} aria-label={copy.nextMonth} title={copy.nextMonth}><ChevronRight size={18} /></IconButton>
         </div>
       </header>
 
@@ -418,14 +418,14 @@ const PaymentEventRow = ({
         </button>
         <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase ${stateTone[event.state]}`}>{stateLabel(event.state, language)}</span>
       </div>
-      <div className={`mt-3 grid gap-2 ${isPaid ? 'grid-cols-1' : 'grid-cols-3'}`}>
+      <div className={`mt-3 grid gap-2 ${isPaid ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3'}`}>
         {!isPaid && (
-          <button type="button" onClick={onReminder} className="min-h-10 rounded-lg border border-emerald-500/25 bg-emerald-500/8 text-[10px] font-black text-emerald-300"><span className="inline-flex items-center gap-1.5"><MessageCircle size={14} />{copy.reminder}</span></button>
+          <WhatsAppButton type="button" onClick={onReminder} compact>{copy.reminder}</WhatsAppButton>
         )}
         {!isPaid && event.kind === 'due' ? (
-          <button type="button" disabled={saving} onClick={onPaid} className="min-h-10 rounded-lg border border-violet-500/25 bg-violet-500/10 text-[10px] font-black text-violet-200 disabled:opacity-50"><span className="inline-flex items-center gap-1.5"><Check size={14} />{copy.markPaid}</span></button>
+          <PrimaryButton type="button" disabled={saving} onClick={onPaid} compact icon={<Check size={14} />}>{copy.markPaid}</PrimaryButton>
         ) : null}
-        <button type="button" onClick={onOpenClient} className="min-h-10 rounded-lg border border-zinc-700 bg-zinc-900 text-[10px] font-black text-zinc-300"><span className="inline-flex items-center gap-1.5"><UserRound size={14} />{isPaid ? copy.viewClient : copy.edit}</span></button>
+        <SecondaryButton type="button" onClick={onOpenClient} compact icon={<UserRound size={14} />}>{isPaid ? copy.viewClient : copy.edit}</SecondaryButton>
       </div>
     </div>
   );

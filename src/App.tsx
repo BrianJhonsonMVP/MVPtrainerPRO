@@ -6,7 +6,7 @@ import {
   Users, Activity, Dumbbell, Crown, ChevronRight, Menu, X, 
   Sparkles, Loader2, AlertCircle, DollarSign, 
   Edit2, Save, User as UserIcon, Clock, Trash2, Banknote, 
-  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square, Pause, Play, UserX
+  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square, Pause, Play, UserX, PlayCircle
 } from 'lucide-react';
 import { BillingRecord, Client, Routine, User as AppUser, DietPlan, ClientPaymentInfo, PlanInterval, UserSubscription } from './types';
 import { generateWorkoutRoutine, generateDietPlan, getLastGeminiErrorMessage } from './services/geminiService';
@@ -36,6 +36,15 @@ import TrainerLandingEditor from './components/TrainerLandingEditor';
 import TrainerPublicPage from './components/TrainerPublicPage';
 import PrioritySessionCard from './components/PrioritySessionCard';
 import QuickPaymentDialog from './components/QuickPaymentDialog';
+import {
+  AiButton,
+  AppButton,
+  ButtonGroup,
+  ContactButton,
+  CopyButton,
+  DestructiveButton,
+  IconButton
+} from './components/ui/Buttons';
 import { COUNTRIES } from './data/countries';
 import {
   formatSessionCountdown,
@@ -1140,7 +1149,7 @@ const convertTo24Hour = (time12: string | null) => {
 const ExerciseItem = ({ ex }: { ex: any }) => {
   const [isOpen, setIsOpen] = useState(false);
   return (
-    <div className="bg-zinc-850 p-4 rounded-xl border border-zinc-800 hover:border-zinc-700 transition-all">
+    <div className="rounded-xl border border-white/[0.07] bg-[#141824] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_8px_24px_rgba(0,0,0,0.16)] transition-[background-color,border-color,box-shadow] hover:border-violet-400/20 hover:bg-[#1A2033]">
       <div className="flex justify-between items-start gap-3">
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
@@ -1165,24 +1174,35 @@ const ExerciseItem = ({ ex }: { ex: any }) => {
           </div>
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-100 bg-black/40 px-2 py-1 rounded border border-zinc-800">
+          <div className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 font-mono text-xs text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <span className="font-extrabold text-white">{ex.sets}</span>
             <span className="text-zinc-600">x</span>
             <span className="text-mvp-gold font-bold">{ex.reps}</span>
           </div>
           {(ex.howTo || ex.commonMistake) && (
-            <button 
+            <motion.button
               onClick={() => setIsOpen(!isOpen)} 
-              className="text-[10px] text-mvp-gold hover:text-white flex items-center gap-1 font-bold mt-1 bg-mvp-gold/5 hover:bg-mvp-gold/20 px-2 py-0.5 rounded border border-mvp-gold/10 transition-all select-none whitespace-nowrap"
+              whileTap={{ scale: 0.96 }}
+              aria-expanded={isOpen}
+              className="mt-1 inline-flex min-h-8 select-none items-center gap-1.5 whitespace-nowrap rounded-lg border border-violet-300/25 bg-[linear-gradient(180deg,rgba(124,58,237,0.18),rgba(76,29,149,0.13))] px-2.5 text-[10px] font-bold text-violet-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_3px_9px_rgba(0,0,0,0.2)] transition-[border-color,filter] hover:border-violet-300/40 hover:brightness-110"
             >
-              {isOpen ? "Ocultar guía" : "Cómo hacerlo"} {isOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-            </button>
+              <PlayCircle size={13} />
+              {isOpen ? "Ocultar guía" : "Cómo hacerlo"} {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </motion.button>
           )}
         </div>
       </div>
 
+      <AnimatePresence initial={false}>
       {isOpen && (
-        <div className="mt-3 pt-3 border-t border-zinc-800/80 text-xs text-zinc-300 space-y-2.5 animate-fadeIn">
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="overflow-hidden"
+        >
+        <div className="mt-3 space-y-2.5 border-t border-zinc-800/80 pt-3 text-xs text-zinc-300">
           {ex.howTo && (
             <div>
               <p className="text-mvp-gold font-bold uppercase tracking-wider text-[9px] mb-1">Guía Paso a Paso:</p>
@@ -1196,7 +1216,9 @@ const ExerciseItem = ({ ex }: { ex: any }) => {
             </div>
           )}
         </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -1476,72 +1498,6 @@ const SkeletonPayment = () => (
   </div>
 );
 
-type AppButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'success' | 'danger' | 'contact';
-type AppButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: AppButtonVariant;
-  isLoading?: boolean;
-  icon?: React.ReactNode;
-};
-
-const APP_BUTTON_VARIANTS: Record<AppButtonVariant, string> = {
-  primary: 'bg-mvp-action text-white border border-violet-200/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(138,43,226,0.28)] hover:bg-mvp-action-hover hover:border-violet-200/40 focus:ring-violet-300/25',
-  secondary: 'bg-[#111620] text-zinc-100 border border-[#2a3140] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:bg-[#181e2a] hover:border-violet-400/28 focus:ring-violet-400/18',
-  tertiary: 'bg-transparent text-zinc-300 border border-transparent hover:bg-[#111620] hover:text-white focus:ring-zinc-500/18',
-  success: 'bg-emerald-600/90 text-white border border-emerald-300/25 hover:bg-emerald-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_20px_rgba(16,185,129,0.12)] focus:ring-emerald-400/25',
-  danger: 'bg-red-950/24 text-red-200 border border-red-500/30 hover:bg-red-950/42 hover:border-red-400/48 hover:text-white focus:ring-red-400/25',
-  contact: 'bg-[#111620] text-zinc-100 border border-[#2a3140] hover:bg-[#181e2a] hover:border-violet-400/28 focus:ring-violet-400/18',
-};
-
-const AppButton = ({ variant = 'secondary', isLoading = false, icon, children, className = '', disabled, ...props }: AppButtonProps) => (
-  <motion.button
-    {...props}
-    disabled={disabled || isLoading}
-    whileTap={disabled || isLoading ? undefined : MOTION_TAP}
-    transition={MOTION_BUTTON_TRANSITION}
-    className={`min-h-[44px] rounded-xl px-4 py-2.5 text-[13px] font-extrabold inline-flex items-center justify-center gap-2 transition-all duration-200 focus:outline-none focus:ring-2 disabled:opacity-55 disabled:cursor-not-allowed ${APP_BUTTON_VARIANTS[variant]} ${className}`}
-  >
-    {isLoading ? <Loader2 size={16} className="animate-spin" /> : icon}
-    <span className="min-w-0 text-center leading-tight">{children}</span>
-  </motion.button>
-);
-
-const IconButton = ({ className = '', children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { children: React.ReactNode }) => (
-  <motion.button
-    {...props}
-    whileTap={props.disabled ? undefined : MOTION_TAP}
-    transition={MOTION_BUTTON_TRANSITION}
-    className={`min-h-[44px] min-w-[44px] rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 inline-flex items-center justify-center transition-all hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-400/25 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-  >
-    {children}
-  </motion.button>
-);
-
-const ContactButton = ({ tone = 'neutral', icon, children, className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'whatsapp' | 'neutral' | 'danger'; icon?: React.ReactNode }) => {
-  const toneClass = tone === 'whatsapp'
-    ? 'bg-emerald-500/[0.08] text-emerald-200 border-emerald-500/30 hover:bg-emerald-500/[0.13] hover:border-emerald-400/48'
-    : tone === 'danger'
-      ? 'bg-red-950/35 text-red-200 border-red-500/35 hover:bg-red-950/55 hover:border-red-400/55'
-      : 'bg-[#11141d] text-zinc-100 border-[#2a2f3d] hover:bg-[#151925] hover:border-violet-400/30';
-
-  return (
-    <motion.button
-      {...props}
-      whileTap={props.disabled ? undefined : MOTION_TAP}
-      transition={MOTION_BUTTON_TRANSITION}
-      className={`min-h-[44px] rounded-xl px-4 text-[13px] font-extrabold inline-flex items-center justify-center gap-2 border shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-violet-400/20 disabled:opacity-45 disabled:cursor-not-allowed ${toneClass} ${className}`}
-    >
-      {icon}
-      <span className="truncate">{children}</span>
-    </motion.button>
-  );
-};
-
-const DestructiveButton = (props: AppButtonProps) => <AppButton {...props} variant="danger" />;
-
-const ButtonGroup = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`flex flex-wrap items-center gap-2 ${className}`}>{children}</div>
-);
-
 const Toast = ({ title, message, type, onClose }: { title: string, message: string, type: 'success' | 'warning' | 'error' | 'info', onClose: () => void }) => {
   const duration = type === 'error' ? 5500 : type === 'warning' ? 4500 : 3200;
   useEffect(() => { const t = setTimeout(onClose, duration); return () => clearTimeout(t); }, [onClose, duration]);
@@ -1749,6 +1705,8 @@ const PlanAIModal = ({
           activeClient: 'Active client',
           routine: 'Workout plan',
           diet: 'Nutrition plan',
+          routineHint: 'Training, strength and progression',
+          dietHint: 'Nutrition, portions and macros',
           generateRoutine: 'Generate workout',
           generateDiet: 'Generate nutrition plan'
         }
@@ -1760,6 +1718,8 @@ const PlanAIModal = ({
           activeClient: 'Cliente activo',
           routine: 'Rutina',
           diet: 'Dieta',
+          routineHint: 'Entrenamiento, fuerza y progresion',
+          dietHint: 'Nutricion, porciones y macros',
           generateRoutine: 'Generar rutina',
           generateDiet: 'Generar dieta'
         };
@@ -1823,44 +1783,55 @@ const PlanAIModal = ({
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <button
+                            <motion.button
                                 type="button"
                                 onClick={() => setSelectedType('routine')}
                                 aria-pressed={selectedType === 'routine'}
-                                className={`rounded-xl p-4 min-h-[92px] flex flex-col justify-between text-left border transition-colors ${
+                                whileHover={{ y: -2 }}
+                                whileTap={{ scale: 0.96 }}
+                                transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                                className={`rounded-xl p-3.5 min-h-[112px] flex flex-col justify-between text-left border transition-[background,border-color,box-shadow] ${
                                   selectedType === 'routine'
-                                    ? 'bg-violet-500/10 border-violet-400/55 text-white'
-                                    : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                                    ? 'bg-[#1B1730] border-violet-400 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_18px_rgba(138,43,226,0.26)]'
+                                    : 'bg-[linear-gradient(180deg,#191e2b,#121620)] border-white/10 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_4px_12px_rgba(0,0,0,0.24)] hover:border-violet-300/25'
                                 }`}
                             >
-                                <Dumbbell size={22} className={selectedType === 'routine' ? 'text-violet-300' : 'text-zinc-500'} />
-                                <span className="font-extrabold text-sm">{modalCopy.routine}</span>
-                            </button>
-                            <button
+                                <span className={`grid h-10 w-10 place-items-center rounded-xl ${selectedType === 'routine' ? 'bg-[linear-gradient(180deg,#9b63f6,#6d28d9)] text-white shadow-[0_5px_16px_rgba(138,43,226,0.38)]' : 'bg-black/25 text-zinc-500'}`}><Dumbbell size={20} /></span>
+                                <span>
+                                    <span className="block font-extrabold text-sm">{modalCopy.routine}</span>
+                                    <span className="mt-1 block text-[10px] font-medium leading-snug text-zinc-500">{modalCopy.routineHint}</span>
+                                </span>
+                            </motion.button>
+                            <motion.button
                                 type="button"
                                 onClick={() => setSelectedType('diet')}
                                 aria-pressed={selectedType === 'diet'}
-                                className={`rounded-xl p-4 min-h-[92px] flex flex-col justify-between text-left border transition-colors ${
+                                whileHover={{ y: -2 }}
+                                whileTap={{ scale: 0.96 }}
+                                transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                                className={`rounded-xl p-3.5 min-h-[112px] flex flex-col justify-between text-left border transition-[background,border-color,box-shadow] ${
                                   selectedType === 'diet'
-                                    ? 'bg-violet-500/10 border-violet-400/55 text-white'
-                                    : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                                    ? 'bg-[#1B1730] border-violet-400 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_18px_rgba(138,43,226,0.26)]'
+                                    : 'bg-[linear-gradient(180deg,#191e2b,#121620)] border-white/10 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_4px_12px_rgba(0,0,0,0.24)] hover:border-violet-300/25'
                                 }`}
                             >
-                                <Utensils size={22} className={selectedType === 'diet' ? 'text-violet-300' : 'text-zinc-500'} />
-                                <span className="font-extrabold text-sm">{modalCopy.diet}</span>
-                            </button>
+                                <span className={`grid h-10 w-10 place-items-center rounded-xl ${selectedType === 'diet' ? 'bg-[linear-gradient(180deg,#9b63f6,#6d28d9)] text-white shadow-[0_5px_16px_rgba(138,43,226,0.38)]' : 'bg-black/25 text-zinc-500'}`}><Utensils size={20} /></span>
+                                <span>
+                                    <span className="block font-extrabold text-sm">{modalCopy.diet}</span>
+                                    <span className="mt-1 block text-[10px] font-medium leading-snug text-zinc-500">{modalCopy.dietHint}</span>
+                                </span>
+                            </motion.button>
                         </div>
 
-                        <AppButton
+                        <AiButton
                             type="button"
                             onClick={() => selectedClient && onGenerate(selectedClient, selectedType)}
                             disabled={!selectedClient}
-                            variant="primary"
                             icon={selectedType === 'routine' ? <Dumbbell size={17} /> : <Utensils size={17} />}
-                            className="ai-magic-button w-full"
+                            className="w-full min-h-12"
                         >
                             {selectedType === 'routine' ? modalCopy.generateRoutine : modalCopy.generateDiet}
-                        </AppButton>
+                        </AiButton>
                     </div>
                 )}
             </motion.div>
@@ -3045,7 +3016,9 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                                 <div className="space-y-6">
                                                     {Object.keys(groupedExercises).map((dayName, dayIdx) => (
                                                         <div key={`${r.id}-${dayName}-${dayIdx}`} className="space-y-2">
-                                                            <div className="flex items-center gap-2 text-mvp-gold font-bold uppercase text-xs tracking-wider border-b border-zinc-800 pb-1 mb-2"><Calendar size={12}/> {dayName}</div>
+                                                            <div className="mb-2 flex items-center gap-2 border-b border-zinc-800 pb-2">
+                                                                <span className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400/25 bg-violet-950/60 px-3 py-1.5 text-[10px] font-black uppercase tracking-normal text-violet-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"><Calendar size={12}/> {dayName}</span>
+                                                            </div>
                                                             {(Array.isArray(groupedExercises[dayName]) ? groupedExercises[dayName] : []).map((ex, exIdx) => (
                                                                 <div key={`${r.id}-${dayName}-${exIdx}`}>
                                                                     <ExerciseItem ex={ex} />
@@ -3085,18 +3058,17 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                                         >
                                                             WhatsApp
                                                         </ContactButton>
-                                                        <AppButton
+                                                        <CopyButton
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 navigator.clipboard.writeText(buildRoutineShareMessage(r, language));
                                                                 onShowToast({ title: detailCopy.copiedRoutineTitle, message: detailCopy.readyToPaste, type: 'success' });
                                                             }} 
-                                                            variant="secondary"
-                                                            icon={<Copy size={16} />}
+                                                            copiedLabel={language === 'en' ? 'Copied!' : '¡Copiado!'}
                                                             className="sm:min-w-[132px]"
                                                         >
                                                             {detailCopy.copy}
-                                                        </AppButton>
+                                                        </CopyButton>
                                                         <DestructiveButton
                                                             onClick={async (e) => { 
                                                                 e.stopPropagation(); 
@@ -3266,19 +3238,18 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                                 >
                                                     WhatsApp
                                                 </ContactButton>
-                                                <AppButton
+                                                <CopyButton
                                                     onClick={() => {
                                                         const diet = clientDiet!;
                                                         const sharedMessage = buildDietShareMessage(diet, language);
                                                         navigator.clipboard.writeText(sharedMessage);
                                                         onShowToast({ title: detailCopy.copiedDietTitle, message: detailCopy.readyToPaste, type: 'success' });
                                                     }} 
-                                                    variant="secondary"
-                                                    icon={<Copy size={16} />}
+                                                    copiedLabel={language === 'en' ? 'Copied!' : '¡Copiado!'}
                                                     className="sm:min-w-[132px]"
                                                 >
                                                     {detailCopy.copy}
-                                                </AppButton>
+                                                </CopyButton>
                                                 <DestructiveButton
                                                     onClick={() => {
                                                         requestConfirm({
@@ -5770,8 +5741,8 @@ const App = () => {
                   {language === 'es' ? `${trialDaysRemaining} días de prueba` : `${trialDaysRemaining} trial days`}
                 </button>
              )}
-             {/* New Agenda Button */}
-             <button 
+             <IconButton
+                active={view === 'day'}
                 onClick={() => {
                     const check = canUseFeature(user, 'agenda');
                     if (!check.allowed) {
@@ -5781,15 +5752,14 @@ const App = () => {
                     }
                     setView('day');
                 }}
-                className={`w-10 h-10 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-colors ${view === 'day' ? 'bg-mvp-gold text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'}`}
                 title={appCopy.myDay}
                 aria-label={appCopy.myDay}
              >
-                <Calendar size={18} />
-             </button>
+                <Calendar size={18} strokeWidth={1.9} />
+             </IconButton>
              
-             {/* Payments Button */}
-             <button 
+             <IconButton
+                active={view === 'payments'}
                 onClick={() => {
                     const check = canUseFeature(user, 'payments');
                     if (!check.allowed) {
@@ -5799,19 +5769,18 @@ const App = () => {
                     }
                     setView('payments');
                 }}
-                className={`w-10 h-10 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-colors ${view === 'payments' ? 'bg-mvp-gold text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'}`}
                 title={appCopy.payments}
                 aria-label={appCopy.payments}
              >
-                <Banknote size={18} />
-             </button>
+                <Banknote size={18} strokeWidth={1.9} />
+             </IconButton>
 
-             <button onClick={() => setView('account')} className="w-10 h-10 md:w-9 md:h-9 bg-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700" title={language === 'es' ? 'Mi cuenta' : 'My account'} aria-label={language === 'es' ? 'Mi cuenta' : 'My account'}>
-                <UserIcon size={18} />
-             </button>
-             <button onClick={handleLogout} className="w-10 h-10 md:w-9 md:h-9 bg-zinc-800 rounded-full flex items-center justify-center text-red-400 hover:text-red-300 hover:bg-zinc-700" title={appCopy.logout} aria-label={appCopy.logout}>
-                <LogOut size={18} />
-             </button>
+             <IconButton active={view === 'account'} onClick={() => setView('account')} title={language === 'es' ? 'Mi cuenta' : 'My account'} aria-label={language === 'es' ? 'Mi cuenta' : 'My account'}>
+                <UserIcon size={18} strokeWidth={1.9} />
+             </IconButton>
+             <IconButton tone="danger" onClick={handleLogout} title={appCopy.logout} aria-label={appCopy.logout}>
+                <LogOut size={18} strokeWidth={1.9} />
+             </IconButton>
          </div>
       </header>
 

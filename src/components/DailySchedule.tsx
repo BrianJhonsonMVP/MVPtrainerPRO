@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
-  MessageCircle,
   TimerReset,
   UserRound
 } from 'lucide-react';
@@ -24,6 +23,7 @@ import {
   getWeekSchedule
 } from '../services/scheduleService';
 import PremiumLockOverlay from './PremiumLockOverlay';
+import { IconButton, SecondaryButton, WhatsAppButton } from './ui/Buttons';
 
 interface DailyScheduleProps {
   user: User;
@@ -262,15 +262,15 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
                   </div>
                 </div>
                 <div className="grid gap-2 border-t border-white/8 p-3 sm:grid-cols-[1fr_auto_auto]">
-                  <button type="button" onClick={() => sendReminder(nextSession)} className="min-h-11 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 text-xs font-black text-emerald-300 hover:bg-emerald-500/15">
-                    <span className="inline-flex items-center gap-2"><MessageCircle size={16} />{copy.reminder}</span>
-                  </button>
-                  <button type="button" onClick={() => openWhatsApp(nextSession.client)} className="min-h-11 rounded-xl border border-zinc-700 bg-zinc-900 px-4 text-xs font-black text-zinc-200 hover:border-zinc-600">
-                    <span className="inline-flex items-center gap-2"><ArrowUpRight size={16} />{copy.openChat}</span>
-                  </button>
-                  <button type="button" onClick={() => onOpenClient(nextSession.client)} className="min-h-11 rounded-xl border border-zinc-700 bg-zinc-900 px-4 text-xs font-black text-zinc-200 hover:border-violet-500/40">
-                    <span className="inline-flex items-center gap-2"><UserRound size={16} />{copy.profile}</span>
-                  </button>
+                  <WhatsAppButton type="button" onClick={() => sendReminder(nextSession)} className="w-full">
+                    {copy.reminder}
+                  </WhatsAppButton>
+                  <SecondaryButton type="button" onClick={() => openWhatsApp(nextSession.client)} icon={<ArrowUpRight size={16} />}>
+                    {copy.openChat}
+                  </SecondaryButton>
+                  <SecondaryButton type="button" onClick={() => onOpenClient(nextSession.client)} icon={<UserRound size={16} />}>
+                    {copy.profile}
+                  </SecondaryButton>
                 </div>
               </div>
             </section>
@@ -364,12 +364,10 @@ const SessionRow = ({
       </button>
       <div className="flex items-center justify-between gap-2 sm:justify-end">
         <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${sessionTone(session.status)}`}>{copy[statusKey]}</span>
-        <button type="button" onClick={onWhatsApp} title="WhatsApp" aria-label="WhatsApp" className="grid h-10 w-10 place-items-center rounded-xl border border-emerald-500/25 bg-emerald-500/8 text-emerald-300 hover:bg-emerald-500/15">
-          <MessageCircle size={17} />
-        </button>
-        <button type="button" onClick={onOpen} title={copy.profile} aria-label={copy.profile} className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-white">
+        <WhatsAppButton type="button" onClick={onWhatsApp} title="WhatsApp" aria-label="WhatsApp" iconOnly />
+        <IconButton type="button" onClick={onOpen} title={copy.profile} aria-label={copy.profile}>
           <ChevronRight size={17} />
-        </button>
+        </IconButton>
       </div>
     </div>
   );

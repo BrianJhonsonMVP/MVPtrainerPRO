@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Banknote, ChevronRight, ExternalLink, MessageCircle } from 'lucide-react';
+import { Banknote, ChevronRight, ExternalLink } from 'lucide-react';
+import { IconButton, WhatsAppButton } from './ui/Buttons';
 
 type PriorityKind = 'training' | 'payment';
 type Language = 'es' | 'en';
@@ -248,26 +249,21 @@ const PrioritySessionCard: React.FC<PrioritySessionCardProps> = ({
                 </div>
 
                 <div className="flex items-center justify-end gap-2">
-                    <button
-                        type="button"
+                    <WhatsAppButton
                         onClick={onWhatsApp}
                         disabled={!hasPhone}
                         title={hasPhone ? 'WhatsApp' : actionUnavailable}
                         aria-label={hasPhone ? 'WhatsApp' : actionUnavailable}
-                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-500/35 bg-emerald-500/10 text-emerald-400 transition-all hover:border-emerald-400/60 hover:bg-emerald-500/15 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
-                    >
-                        <MessageCircle size={19} />
-                    </button>
-                    <button
-                        type="button"
+                        iconOnly
+                    />
+                    <IconButton
                         onClick={onOpenChat}
                         disabled={!hasPhone}
                         title={hasPhone ? (language === 'es' ? 'Abrir chat' : 'Open chat') : actionUnavailable}
                         aria-label={hasPhone ? (language === 'es' ? 'Abrir chat' : 'Open chat') : actionUnavailable}
-                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/70 text-zinc-300 transition-all hover:border-violet-400/40 hover:text-violet-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
                     >
                         <ExternalLink size={18} />
-                    </button>
+                    </IconButton>
                 </div>
             </div>
         </article>

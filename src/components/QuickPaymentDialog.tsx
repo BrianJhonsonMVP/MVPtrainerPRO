@@ -4,6 +4,7 @@ import { Calendar, Check, X } from 'lucide-react';
 import { ClientPaymentInfo } from '../types';
 import { AppLanguage } from '../services/scheduleService';
 import { formatMoney, markPaymentPaid, parsePaymentDate } from '../services/paymentService';
+import { AppButton, IconButton, PrimaryButton } from './ui/Buttons';
 
 interface Props {
   clientName: string;
@@ -57,7 +58,7 @@ const QuickPaymentDialog: React.FC<Props> = ({
             <p className="text-[10px] font-black uppercase text-violet-300">{language === 'en' ? 'Quick payment' : 'Pago rápido'}</p>
             <h2 id="quick-payment-title" className="mt-1 text-xl font-black text-white">{language === 'en' ? `Payment from ${clientName}` : `Pago de ${clientName}`}</h2>
           </div>
-          <button type="button" onClick={onClose} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-white" aria-label={language === 'en' ? 'Close' : 'Cerrar'}><X size={17} /></button>
+          <IconButton type="button" onClick={onClose} className="shrink-0" aria-label={language === 'en' ? 'Close' : 'Cerrar'}><X size={17} /></IconButton>
         </header>
 
         <div className="space-y-5 p-5">
@@ -65,14 +66,15 @@ const QuickPaymentDialog: React.FC<Props> = ({
             <p className="mb-2 text-xs font-bold text-zinc-400">{language === 'en' ? 'How long does this payment cover?' : '¿Cuánto tiempo cubre este pago?'}</p>
             <div className="grid grid-cols-3 gap-2" role="group" aria-label={language === 'en' ? 'Coverage months' : 'Meses de cobertura'}>
               {[1, 2, 3].map(option => (
-                <button
+                <AppButton
                   key={option}
                   type="button"
                   onClick={() => setMonths(option)}
-                  className={`min-h-12 rounded-xl border text-sm font-black transition-colors ${months === option ? 'border-violet-400 bg-violet-500 text-white' : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-white'}`}
+                  variant={months === option ? 'primary' : 'secondary'}
+                  className="min-h-12 w-full"
                 >
                   {option} {language === 'en' ? (option === 1 ? 'month' : 'months') : (option === 1 ? 'mes' : 'meses')}
-                </button>
+                </AppButton>
               ))}
             </div>
           </div>
@@ -90,17 +92,18 @@ const QuickPaymentDialog: React.FC<Props> = ({
             </p>
           </div>
 
-          <button
+          <PrimaryButton
             type="button"
             disabled={saving || amount <= 0}
+            isLoading={saving}
             onClick={() => onConfirm(updatedPayment)}
-            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-black text-white shadow-[0_12px_28px_rgba(139,92,246,0.25)] hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+            icon={<Check size={17} />}
+            className="min-h-12 w-full"
           >
-            <Check size={17} />
             {saving
               ? (language === 'en' ? 'Saving...' : 'Guardando...')
               : `${language === 'en' ? 'Register' : 'Registrar'} ${formatMoney(amount, country, activeLanguage)}`}
-          </button>
+          </PrimaryButton>
         </div>
       </section>
     </div>,

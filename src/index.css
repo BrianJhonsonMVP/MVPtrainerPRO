@@ -1058,6 +1058,21 @@ button.dashboard-row-card:hover {
   animation: aiLightSweep 2.8s ease-in-out infinite;
 }
 
+@keyframes tactileButtonShimmer {
+  0%, 72% { transform: translateX(-180%) skewX(-20deg); opacity: 0; }
+  78% { opacity: 0.85; }
+  96%, 100% { transform: translateX(520%) skewX(-20deg); opacity: 0; }
+}
+
+.ui-ai-shimmer {
+  animation: tactileButtonShimmer 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.ui-tactile-button:disabled .ui-ai-shimmer {
+  display: none;
+}
+
 .client-detail-page {
   position: relative;
 }
@@ -1539,7 +1554,8 @@ html[data-dev-preview-mode] .dev-preview-safe-bottom {
   .mvp-splash-speed-lines,
   .app-loading-bar,
   .animate-logoFloat,
-  .skeleton-shimmer::after {
+  .skeleton-shimmer::after,
+  .ui-ai-shimmer {
     animation: none !important;
   }
 }

@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Camera, CheckCircle2, Copy, Globe, ImageDown, Loader2, Plus, Save, Share2, User, X } from 'lucide-react';
+import { Camera, CheckCircle2, Globe, ImageDown, Loader2, Plus, Save, Share2, User, X } from 'lucide-react';
 import { dbProvider } from '../data';
 import { uploadTrainerAsset } from '../services/trainerAssetService';
 import { hasFullAccess } from '../services/subscriptionLogic';
 import { PublicProfile, User as AppUser } from '../types';
 import { generateTrainerSocialCard, shareOrDownloadTrainerCard } from '../utils/socialCardGenerator';
 import PremiumLockOverlay from './PremiumLockOverlay';
+import { CopyButton, IconButton, PrimaryButton, ShareImageButton } from './ui/Buttons';
 
 type AppLanguage = 'es' | 'en';
 
@@ -265,7 +266,7 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
               <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{group.label}</span>
               <div className="flex gap-2">
                 <input value={group.value} onChange={event => group.setValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addItem(group.type); } }} className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-violet-400" placeholder={group.placeholder} />
-                <button type="button" onClick={() => addItem(group.type)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-violet-400/60 hover:text-white" aria-label={`${group.label}: ${group.placeholder}`}><Plus size={18} /></button>
+                <IconButton type="button" onClick={() => addItem(group.type)} aria-label={`${group.label}: ${group.placeholder}`}><Plus size={18} /></IconButton>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {profile[group.type].map((item, index) => (
@@ -283,17 +284,15 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
         {notice && <p role="status" className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">{notice}</p>}
 
         <div className="grid gap-3 border-t border-zinc-800 pt-5 sm:grid-cols-[minmax(180px,1fr)_auto_auto]">
-          <button type="button" onClick={handleSave} disabled={saving || uploading} className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-violet-500 px-5 font-black text-white transition-colors hover:bg-violet-400 disabled:opacity-50">
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+          <PrimaryButton type="button" onClick={handleSave} disabled={saving || uploading} isLoading={saving} icon={<Save size={18} />} className="min-h-12 w-full">
             {saving ? copy.saving : copy.save}
-          </button>
-          <button type="button" onClick={handleShareImage} disabled={creatingImage || !profileReady} className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-violet-400/30 bg-violet-500/10 px-5 font-black text-violet-200 transition-colors hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-45">
-            {creatingImage ? <Loader2 size={18} className="animate-spin" /> : navigator.share ? <Share2 size={18} /> : <ImageDown size={18} />}
+          </PrimaryButton>
+          <ShareImageButton type="button" onClick={handleShareImage} disabled={creatingImage || !profileReady} isLoading={creatingImage} icon={navigator.share ? <Share2 size={18} /> : <ImageDown size={18} />} className="min-h-12">
             {creatingImage ? copy.createImage : copy.shareImage}
-          </button>
-          <button type="button" onClick={handleCopyLink} disabled={!profileReady} className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-4 font-bold text-zinc-200 hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-45" title={copy.copyLink}>
-            <Globe size={18} /><span className="sm:sr-only">{copy.copyLink}</span><Copy size={14} className="hidden sm:block" />
-          </button>
+          </ShareImageButton>
+          <CopyButton type="button" onClick={handleCopyLink} disabled={!profileReady} icon={<Globe size={18} />} copiedLabel={copy.linkCopied} className="min-h-12" title={copy.copyLink}>
+            <span className="sm:sr-only">{copy.copyLink}</span>
+          </CopyButton>
         </div>
       </div>
 
