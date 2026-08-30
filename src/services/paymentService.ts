@@ -261,7 +261,7 @@ export const buildPaymentEventsForMonth = (
       events.push({
         id: `${client.id}-paid-${resolved.lastPaidDate.toISOString()}`,
         client,
-        amount: resolved.amount,
+        amount: Number(client.paymentInfo?.lastPaymentAmount) || resolved.amount,
         date: resolved.lastPaidDate,
         state: 'paid',
         kind: 'paid'

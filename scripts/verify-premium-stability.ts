@@ -232,6 +232,23 @@ assert.equal(paymentSummary.pending, 200);
 assert.equal(paymentSummary.overdue, 150);
 assert.equal(paymentSummary.pendingClients, 2);
 
+const changedRateClient = makeClient({
+  id: 'legacy-rate-change',
+  paymentInfo: {
+    ...makeClient({}).paymentInfo,
+    monthlyFee: 300,
+    lastPaymentAmount: 400,
+    lastPaidAt: '2026-07-02T12:00:00.000Z',
+    nextPaymentAt: '2026-08-02T12:00:00.000Z'
+  }
+});
+const changedRateEvents = buildPaymentEventsForMonth([changedRateClient], monday, [], confirmedAt);
+assert.equal(
+  changedRateEvents.find(event => event.kind === 'paid')?.amount,
+  400,
+  'Changing the current monthly rate must not rewrite the last collected amount.'
+);
+
 const paid = markPaymentPaid(makeClient({}).paymentInfo, confirmedAt);
 assert.equal(paid.status, 'al_dia');
 assert.ok(paid.lastPaidAt);
@@ -249,6 +266,16 @@ const threeMonthPayment = markPaymentPaid(
 assert.equal(threeMonthPayment.lastPaymentAmount, 600);
 assert.equal(threeMonthPayment.lastPaymentMonths, 3);
 assert.equal(threeMonthPayment.nextPaymentAt?.slice(0, 10), '2026-04-30', 'Month-end coverage must remain on the last valid calendar day.');
+
+const fiveMonthNewRate = markPaymentPaid(
+  { ...makeClient({}).paymentInfo, monthlyFee: 300, nextPaymentAt: '2026-09-02T12:00:00.000Z' },
+  new Date('2026-09-02T12:00:00.000Z'),
+  5
+);
+assert.equal(fiveMonthNewRate.monthlyFee, 300);
+assert.equal(fiveMonthNewRate.lastPaymentAmount, 1500);
+assert.equal(fiveMonthNewRate.lastPaymentMonths, 5);
+assert.equal(fiveMonthNewRate.nextPaymentAt?.slice(0, 10), '2027-02-02');
 
 const serviceClient = makeClient({
   paymentInfo: {

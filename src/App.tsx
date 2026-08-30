@@ -3477,6 +3477,11 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
                                             className="w-full bg-black border border-zinc-700 text-white rounded-xl pl-8 pr-4 py-3 focus:border-mvp-gold outline-none font-bold"
                                         />
                                     </div>
+                                    <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                                      {language === 'en'
+                                        ? 'This only changes the rate for upcoming charges. Collected payments keep the amount that was actually received.'
+                                        : 'Esto solo cambia la tarifa de los próximos cobros. Los pagos cobrados conservan el monto que realmente recibiste.'}
+                                    </p>
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     <div>
