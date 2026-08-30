@@ -177,6 +177,10 @@ export const visualReviewProvider: IDBProvider = {
     }, 0);
     return () => window.clearTimeout(timer);
   },
+  subscribeToBillingRecords(_trainerId, callback) {
+    const timer = window.setTimeout(() => callback(billingRecords.map(record => ({ ...record }))), 0);
+    return () => window.clearTimeout(timer);
+  },
   async createClient(trainerId, data) {
     const client = baseClient({ ...data, id: `review-client-${Date.now()}`, trainerId });
     clients = [client, ...clients];

@@ -214,7 +214,7 @@ export const buildPaymentEventsForMonth = (
   const monthIndex = month.getMonth();
   const events: PaymentEvent[] = [];
   const activeClients = clients.filter(isActiveClient);
-  const clientsById = new Map(activeClients.map(client => [client.id, client]));
+  const clientsById = new Map(clients.map(client => [client.id, client]));
   const ledgerClientIds = new Set(
     billingRecords
       .filter(record => clientsById.has(record.clientId))
@@ -228,6 +228,11 @@ export const buildPaymentEventsForMonth = (
     const paidDate = parsePaymentDate(record.paidAt);
     const eventDate = record.status === 'paid' ? (paidDate || dueDate) : dueDate;
     if (!eventDate || eventDate.getFullYear() !== year || eventDate.getMonth() !== monthIndex) return;
+
+    // A collected payment is historical business data and remains visible even
+    // after the client's service is paused or finished. Open charges only apply
+    // to clients whose service is currently active.
+    if (record.status !== 'paid' && !isActiveClient(client)) return;
 
     events.push({
       id: `billing-${record.id}`,

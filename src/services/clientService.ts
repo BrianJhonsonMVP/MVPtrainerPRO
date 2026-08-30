@@ -3,6 +3,15 @@ import { parsePaymentDate, startOfDay } from './paymentService';
 
 const DAY_MS = 86_400_000;
 
+export const normalizeClientPhone = (value?: string | null) =>
+  (value || '').replace(/\D/g, '').replace(/^00/, '');
+
+export const findDuplicateClientByPhone = (clients: Client[], phone: string, excludedClientId?: string) => {
+  const normalized = normalizeClientPhone(phone);
+  if (normalized.length < 7) return null;
+  return clients.find(client => client.id !== excludedClientId && normalizeClientPhone(client.phone) === normalized) || null;
+};
+
 export const pauseClientService = (client: Client, now = new Date()): Partial<Client> => ({
   status: 'paused',
   pausedAt: now.toISOString(),

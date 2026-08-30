@@ -12,7 +12,7 @@ import {
   isActivePro,
   isSubscriptionLocked
 } from '../src/services/subscriptionLogic';
-import { getDaySchedule, toScheduleDateKey } from '../src/services/scheduleService';
+import { findDateScheduleConflict, findRecurringScheduleConflict, getDaySchedule, toScheduleDateKey } from '../src/services/scheduleService';
 import {
   buildPaymentEventsForMonth,
   fromLocalDateInputValue,
@@ -21,7 +21,7 @@ import {
   markPaymentPending,
   toLocalDateInputValue
 } from '../src/services/paymentService';
-import { pauseClientService, reactivateClientService, finishClientService } from '../src/services/clientService';
+import { findDuplicateClientByPhone, pauseClientService, reactivateClientService, finishClientService } from '../src/services/clientService';
 import { isActiveClient } from '../src/services/scheduleService';
 
 const confirmedAt = new Date('2026-07-27T17:00:00.000Z');
@@ -195,7 +195,8 @@ const overdueClient = makeClient({
 });
 const inactiveClient = makeClient({
   id: 'client-inactive',
-  status: 'inactive'
+  status: 'inactive',
+  name: 'Former client'
 });
 
 const records: BillingRecord[] = [
@@ -216,21 +217,50 @@ const records: BillingRecord[] = [
     dueDate: '2026-07-20',
     paidAt: null,
     status: 'late'
+  },
+  {
+    id: 'record-inactive-paid',
+    clientId: inactiveClient.id,
+    trainerId: 'trainer-pro',
+    amount: 220,
+    dueDate: '2026-07-05',
+    paidAt: '2026-07-05T12:00:00.000Z',
+    status: 'paid'
   }
 ];
 
 const clients = [makeClient({}), paidClient, overdueClient, inactiveClient];
 const events = buildPaymentEventsForMonth(clients, monday, records, confirmedAt);
-assert.equal(events.some(event => event.client.id === inactiveClient.id), false);
+assert.equal(events.some(event => event.client.id === inactiveClient.id && event.state === 'paid'), true, 'Finished clients must retain collected revenue history.');
 assert.equal(events.some(event => event.state === 'paid' && event.amount === 180), true);
 assert.equal(events.some(event => event.state === 'overdue' && event.amount === 150), true);
 assert.equal(events.some(event => event.state === 'pending' && event.client.id === 'client-1'), true);
 
 const paymentSummary = getMonthlyPaymentSummary(clients, monday, records, confirmedAt);
-assert.equal(paymentSummary.collected, 180);
+assert.equal(paymentSummary.collected, 400);
 assert.equal(paymentSummary.pending, 200);
 assert.equal(paymentSummary.overdue, 150);
 assert.equal(paymentSummary.pendingClients, 2);
+
+const conflictingClient = makeClient({ id: 'client-conflict', name: 'Valeria' });
+assert.equal(
+  findRecurringScheduleConflict([conflictingClient], { trainingDays: ['Monday'], startTime: '18:30', endTime: '19:30' })?.client.id,
+  conflictingClient.id,
+  'Recurring schedule edits must detect overlaps.'
+);
+assert.equal(
+  findDateScheduleConflict([conflictingClient], monday, '18:30', '19:00')?.client.id,
+  conflictingClient.id,
+  'One-day reschedules must detect overlaps.'
+);
+assert.equal(
+  findDateScheduleConflict([conflictingClient], monday, '19:00', '20:00'),
+  null,
+  'Adjacent sessions are allowed.'
+);
+assert.equal(findDuplicateClientByPhone([conflictingClient], '+51 999-111-222'), null);
+const phoneClient = { ...conflictingClient, phone: '+51 999 111 222' };
+assert.equal(findDuplicateClientByPhone([phoneClient], '51999111222')?.id, phoneClient.id, 'Duplicate WhatsApp numbers must be detected despite formatting.');
 
 const changedRateClient = makeClient({
   id: 'legacy-rate-change',

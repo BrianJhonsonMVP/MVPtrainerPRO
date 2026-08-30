@@ -677,6 +677,19 @@ export const supabaseProvider: IDBProvider = {
     };
   },
 
+  subscribeToBillingRecords(trainerId, callback) {
+    if (!isSupabaseEnabled() || !trainerId || trainerId === 'undefined') return () => {};
+    const refresh = () => this.getBillingRecords(trainerId).then(callback).catch(error => {
+      if ((import.meta as any).env?.DEV) console.warn('Billing realtime refresh failed', error);
+    });
+    refresh();
+    const channel = supabase!
+      .channel(`billing-trainer-${trainerId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'billing_records', filter: `trainer_id=eq.${trainerId}` }, refresh);
+    channel.subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  },
+
   async createClient(passedTrainerId, data) {
     const client = requireSupabase();
     const authUser = await requireAuthUser();

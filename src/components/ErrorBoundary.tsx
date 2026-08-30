@@ -44,18 +44,18 @@ Component Stack: ${this.state.errorInfo?.componentStack}
 
   public render() {
     if (this.state.hasError) {
-      // Render fallback UI when an error is caught
+      const showTechnicalDetails = Boolean((import.meta as any).env?.DEV);
       return (
         <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center z-[9999]">
           <div className="bg-red-500/10 p-4 rounded-full mb-6 border border-red-500/30">
             <AlertCircle size={48} className="text-red-500" />
           </div>
-          <h1 className="text-2xl font-black mb-2 text-white uppercase tracking-tighter">Fallo Crítico detectado</h1>
+          <h1 className="text-2xl font-black mb-2 text-white">No pudimos mostrar esta pantalla</h1>
           <p className="text-zinc-400 text-sm mb-6 max-w-md">
-            La interfaz de la aplicación ha colapsado. Esto suele deberse a un error inesperado en el renderizado.
+            Tus datos siguen guardados. Recarga la aplicación para continuar; si vuelve a ocurrir, comunícate con soporte.
           </p>
           
-          <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-6 text-left overflow-hidden">
+          {showTechnicalDetails && <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-6 text-left overflow-hidden">
              <div className="flex justify-between items-center mb-2">
                 <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Error Log</span>
                 <button onClick={this.handleCopyError} className="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1">
@@ -67,14 +67,14 @@ Component Stack: ${this.state.errorInfo?.componentStack}
                 {"\n\n"}
                 {this.state.error?.stack}
              </pre>
-          </div>
+          </div>}
 
           <div className="flex gap-4">
             <button 
               onClick={() => window.location.reload()} 
               className="bg-white text-black px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-zinc-200 transition-colors"
             >
-              <RotateCcw size={18} /> Recargar Aplicación
+              <RotateCcw size={18} /> Volver a intentar
             </button>
           </div>
         </div>

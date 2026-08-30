@@ -49,6 +49,7 @@ import {
 import { COUNTRIES } from './data/countries';
 import {
   formatSessionCountdown,
+  findRecurringScheduleConflict,
   getDaySchedule,
   isActiveClient,
   normalizeDayName
@@ -68,7 +69,7 @@ import {
   parsePaymentDate,
   toLocalDateInputValue
 } from './services/paymentService';
-import { finishClientService, pauseClientService, reactivateClientService } from './services/clientService';
+import { findDuplicateClientByPhone, finishClientService, normalizeClientPhone, pauseClientService, reactivateClientService } from './services/clientService';
 import { authenticatedApiFetch } from './services/authenticatedApi';
 
 // --- HELPERS ---
@@ -1911,6 +1912,45 @@ const ConfirmModal = ({
 };
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
+type LegalDocument = 'privacy' | 'terms';
+
+const LegalDialog = ({ document: legalDocument, language, onClose }: { document: LegalDocument; language: AppLanguage; onClose: () => void }) => {
+  const isPrivacy = legalDocument === 'privacy';
+  const title = language === 'en'
+    ? (isPrivacy ? 'Privacy and data use' : 'Terms of service')
+    : (isPrivacy ? 'Privacidad y uso de datos' : 'Términos de servicio');
+  const paragraphs = language === 'en'
+    ? (isPrivacy ? [
+        'MVP Trainer Pro stores the trainer account, client contact details, physical information, schedules, payments, and plans required to provide the service.',
+        'The trainer is responsible for obtaining the client’s authorization before registering their information. Data used to generate workouts or nutrition plans may be processed by an artificial intelligence provider.',
+        'AI output is assistance, not a medical diagnosis. The trainer must review every plan before using or sharing it. Do not register information that is not necessary for the service.'
+      ] : [
+        'MVP Trainer Pro is a business support tool for personal trainers. The trainer remains responsible for professional decisions, client safety, and the accuracy of registered information.',
+        'The application does not process payments between trainer and client. Payment records are organizational references entered by the trainer.',
+        'Access may be suspended when the trial or subscription ends, while stored work remains protected according to the service policy.'
+      ])
+    : (isPrivacy ? [
+        'MVP Trainer Pro guarda la cuenta del entrenador y los datos de contacto, información física, agenda, pagos y planes de sus clientes necesarios para prestar el servicio.',
+        'El entrenador es responsable de obtener autorización del cliente antes de registrar su información. Los datos usados para generar rutinas o dietas pueden ser procesados por un proveedor de inteligencia artificial.',
+        'El resultado de la IA es una asistencia, no un diagnóstico médico. El entrenador debe revisar cada plan antes de utilizarlo o compartirlo. No registres información que no sea necesaria para el servicio.'
+      ] : [
+        'MVP Trainer Pro es una herramienta de apoyo comercial para personal trainers. El entrenador conserva la responsabilidad sobre sus decisiones profesionales, la seguridad del cliente y la exactitud de los datos registrados.',
+        'La aplicación no procesa pagos entre entrenador y cliente. Los registros de cobro son referencias organizativas ingresadas por el entrenador.',
+        'El acceso puede bloquearse al finalizar la prueba o suscripción, mientras el trabajo guardado se conserva de acuerdo con la política del servicio.'
+      ]);
+  return createPortal(
+    <div className="fixed inset-0 z-[120] grid place-items-end bg-black/80 backdrop-blur-sm sm:place-items-center sm:p-4" role="presentation">
+      <section className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-t-2xl border border-zinc-800 bg-[#0d1119] p-6 shadow-2xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-labelledby="legal-title">
+        <header className="flex items-start justify-between gap-4">
+          <div><p className="text-[10px] font-black uppercase text-violet-300">MVP Trainer Pro</p><h2 id="legal-title" className="mt-1 text-xl font-black text-white">{title}</h2></div>
+          <IconButton type="button" onClick={onClose} aria-label={language === 'en' ? 'Close' : 'Cerrar'}><X size={17} /></IconButton>
+        </header>
+        <div className="mt-5 space-y-4 text-sm leading-relaxed text-zinc-400">{paragraphs.map(paragraph => <p key={paragraph}>{paragraph}</p>)}</div>
+        <p className="mt-5 text-[11px] text-zinc-600">{language === 'en' ? 'Last updated: August 30, 2026.' : 'Última actualización: 30 de agosto de 2026.'}</p>
+      </section>
+    </div>, document.body
+  );
+};
 
 const AuthView = ({
   onLoginSuccess,
@@ -1933,6 +1973,8 @@ const AuthView = ({
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
   const [error, setError] = useState('');
   const [confirmMsg, setConfirmMsg] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [legalDocument, setLegalDocument] = useState<LegalDocument | null>(null);
 
   useEffect(() => {
     setMode(initialMode);
@@ -2050,6 +2092,10 @@ const AuthView = ({
       }
       if (password !== confirmPassword) {
         setError(copy.passwordMatch);
+        return;
+      }
+      if (!acceptedTerms) {
+        setError(language === 'en' ? 'Accept the terms and confirm that you have permission to register client data.' : 'Acepta los términos y confirma que tienes autorización para registrar los datos de tus clientes.');
         return;
       }
     }
@@ -2238,6 +2284,11 @@ const AuthView = ({
                 </label>
               )}
 
+              {mode === 'register' && <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-800 bg-black/25 p-3 text-left text-xs leading-relaxed text-zinc-400">
+                <input type="checkbox" checked={acceptedTerms} onChange={event => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 accent-violet-500" />
+                <span>{language === 'en' ? 'I accept the terms and confirm I have permission to register my clients’ data.' : 'Acepto los términos y confirmo que tengo autorización para registrar los datos de mis clientes.'}</span>
+              </label>}
+
               <motion.button type="submit" disabled={loading || Boolean(socialLoading)} whileTap={loading || socialLoading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-primary-action w-full font-black flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-wait">
                 {loading && <Loader2 size={18} className="animate-spin"/>}
                 {submitLabel}
@@ -2258,11 +2309,16 @@ const AuthView = ({
                 <button type="button" onClick={() => switchMode('login')} className="auth-link-button text-sm text-zinc-400 hover:text-white">{copy.backLogin}</button>
               )}
                 </div>
+                <div className="mt-5 flex items-center justify-center gap-4 border-t border-zinc-800 pt-4 text-[11px] font-semibold text-zinc-600">
+                  <button type="button" onClick={() => setLegalDocument('privacy')} className="hover:text-violet-300">{language === 'en' ? 'Privacy' : 'Privacidad'}</button>
+                  <button type="button" onClick={() => setLegalDocument('terms')} className="hover:text-violet-300">{language === 'en' ? 'Terms' : 'Términos'}</button>
+                </div>
               </PageTransition>
             </AnimatePresence>
           </div>
         </section>
       </div>
+      {legalDocument && <LegalDialog document={legalDocument} language={language} onClose={() => setLegalDocument(null)} />}
     </PageTransition>
   );
 };
@@ -2273,6 +2329,7 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
   const copy = APP_COPY[language];
   const planStatus = user ? getTranslatedPlanStatus(user, language, getPlanStatusLabel(user)) : null;
   const isPro = hasFullAccess(user);
+  const [legalDocument, setLegalDocument] = useState<LegalDocument | null>(null);
   const publicProfileReady = Boolean(
     user.publicProfile?.isPublished &&
     user.publicProfile?.description?.trim().length >= 20 &&
@@ -2425,8 +2482,13 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
              <button onClick={safeLogout} className="text-red-500 hover:text-red-400 text-sm font-bold flex items-center justify-center gap-2 mx-auto py-2">
                 <LogOut size={16}/> {copy.logout}
              </button>
+             <div className="mt-3 flex items-center justify-center gap-4 text-[11px] font-semibold text-zinc-600">
+               <button type="button" onClick={() => setLegalDocument('privacy')} className="hover:text-violet-300">{language === 'en' ? 'Privacy' : 'Privacidad'}</button>
+               <button type="button" onClick={() => setLegalDocument('terms')} className="hover:text-violet-300">{language === 'en' ? 'Terms' : 'Términos'}</button>
+             </div>
         </div>
       </div>
+      {legalDocument && <LegalDialog document={legalDocument} language={language} onClose={() => setLegalDocument(null)} />}
     </div>
   );
 };
@@ -2435,7 +2497,7 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
 
 type TabType = 'profile' | 'agenda' | 'routines' | 'nutrition' | 'payments';
 
-const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall, onShowToast, onEdit, onUserUsageUpdate, requestConfirm, onRefreshCounts, initialTab = 'profile', autoGenerateRequest, language = 'es' }: any) => {
+const ClientDetail = ({ client, clients = [], user, onBack, onUpdate, onShowPaywall, onShowToast, onEdit, onUserUsageUpdate, requestConfirm, onRefreshCounts, initialTab = 'profile', autoGenerateRequest, language = 'es' }: any) => {
     const detailCopy = CLIENT_DETAIL_COPY[language as AppLanguage] || CLIENT_DETAIL_COPY.es;
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -2782,6 +2844,22 @@ const ClientDetail = ({ client, user, onBack, onUpdate, onDelete, onShowPaywall,
         }
         if (agendaForm.startTime >= agendaForm.endTime) {
             onShowToast({ title: detailCopy.saveErrorTitle, message: detailCopy.agendaTimeError, type: 'error' });
+            return;
+        }
+        const conflict = findRecurringScheduleConflict(clients, {
+            clientId: client.id,
+            trainingDays: agendaForm.days,
+            startTime: agendaForm.startTime,
+            endTime: agendaForm.endTime
+        });
+        if (conflict) {
+            onShowToast({
+                title: language === 'en' ? 'Schedule conflict' : 'Horario ocupado',
+                message: language === 'en'
+                    ? `You already train ${conflict.client.name} during that time.`
+                    : `Ya entrenas a ${conflict.client.name} durante ese horario.`,
+                type: 'warning'
+            });
             return;
         }
         await onUpdate({
@@ -3571,6 +3649,7 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
     });
 
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [confirmedDuplicatePhone, setConfirmedDuplicatePhone] = useState('');
     const [optionalDataOpen, setOptionalDataOpen] = useState(() => Boolean(initialData?.email));
     const [voiceModalOpen, setVoiceModalOpen] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState('');
@@ -4036,33 +4115,16 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
     const timeSlots = generateTimeSlots();
 
     const findScheduleConflict = () => {
-        const newStart = formData.trainingStartTime;
-        const newEnd = formData.trainingEndTime;
-        if (!newStart || !newEnd || formData.trainingDays.length === 0) return null;
-
-        for (const otherClient of existingClients.filter(isActiveClient)) {
-            if (initialData?.id && otherClient.id === initialData.id) continue;
-            if (!otherClient.trainingTime || !Array.isArray(otherClient.trainingDays)) continue;
-
-            const sharedDay = formData.trainingDays.find(day =>
-                otherClient.trainingDays.some(existingDay => normalizeDayName(existingDay) === normalizeDayName(day))
-            );
-            if (!sharedDay) continue;
-
-            const [rawStart, rawEnd] = otherClient.trainingTime.split(' - ');
-            const otherStart = convertTo24Hour(rawStart || '');
-            const otherEnd = convertTo24Hour(rawEnd || '');
-            if (!otherStart || !otherEnd) continue;
-
-            const overlaps = newStart < otherEnd && newEnd > otherStart;
-            if (overlaps) {
-                return language === 'en'
-                    ? `Schedule conflict: on ${dayFullLabel(sharedDay, language)} from ${rawStart} to ${rawEnd} you already have a training session with ${otherClient.name}.`
-                    : `Horario ocupado: el ${dayFullLabel(sharedDay, language)} de ${rawStart} a ${rawEnd} ya tienes entrenamiento con ${otherClient.name}.`;
-            }
-        }
-
-        return null;
+        const conflict = findRecurringScheduleConflict(existingClients, {
+            clientId: initialData?.id,
+            trainingDays: formData.trainingDays,
+            startTime: formData.trainingStartTime,
+            endTime: formData.trainingEndTime
+        });
+        if (!conflict) return null;
+        return language === 'en'
+            ? `Schedule conflict: on ${dayFullLabel(conflict.day || '', language)} you already have a training session with ${conflict.client.name}.`
+            : `Horario ocupado: el ${dayFullLabel(conflict.day || '', language)} ya tienes entrenamiento con ${conflict.client.name}.`;
     };
 
     const formErrors = {
@@ -4173,6 +4235,18 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
                     }
                 }
             }, 100);
+            return;
+        }
+
+        const normalizedPhone = normalizeClientPhone(cleanPhone);
+        const duplicateClient = findDuplicateClientByPhone(existingClients, normalizedPhone, initialData?.id);
+        if (duplicateClient && confirmedDuplicatePhone !== normalizedPhone) {
+            setConfirmedDuplicatePhone(normalizedPhone);
+            const duplicateMessage = language === 'en'
+                ? `This WhatsApp already belongs to ${duplicateClient.name}. Review it, or press save again if they are different people.`
+                : `Este WhatsApp ya pertenece a ${duplicateClient.name}. Revísalo o vuelve a guardar si realmente son personas distintas.`;
+            setErrors(prev => ({ ...prev, phone: duplicateMessage }));
+            onShowToast({ title: language === 'en' ? 'Possible duplicate' : 'Posible cliente duplicado', message: duplicateMessage, type: 'warning' });
             return;
         }
 
@@ -5344,8 +5418,12 @@ const App = () => {
         }
       }
     );
+    const unsubBilling = dbProvider.subscribeToBillingRecords(trainerId, setBillingRecords);
     realtimeSubscribedRef.current = trainerId;
-    realtimeUnsubscribeRef.current = unsubClients;
+    realtimeUnsubscribeRef.current = () => {
+      unsubClients();
+      unsubBilling();
+    };
 
     return () => {
       // Intentionally bypassed to maintain live connection across React StrictMode & normal views re-rendering
@@ -5470,58 +5548,6 @@ const App = () => {
               setToast({ title: APP_COPY[language].createErrorTitle, message: APP_COPY[language].createErrorMessage, type: 'error' });
           }
       }
-  };
-
-  const handleDeleteClient = (clientId: string) => {
-    setConfirmConfig({
-        isOpen: true,
-        title: "¿Eliminar cliente?",
-        message: "¿Seguro que deseas eliminar este cliente? Se mantendrá en el historial pero no aparecerá en tu lista principal.",
-        type: 'danger',
-        onConfirm: () => executeDeleteClient(clientId)
-    });
-  };
-
-  const executeDeleteClient = async (clientId: string) => {
-    appLog("HANDLE DELETE CLIENT START:", clientId);
-    setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-
-    try {
-        setToast({ title: "Eliminando...", message: "Procesando baja del cliente", type: 'info' });
-        await dbProvider.deleteClient(clientId);
-        appLog("HANDLE DELETE CLIENT SUCCESS:", clientId);
-        
-        // Actualizar estado local inmediatamente
-        setClients(prev => prev.filter(c => c.id !== clientId));
-        setView('dashboard');
-        setSelectedClient(null);
-        
-        setToast({ title: "Cliente Eliminado", message: "El cliente ha sido archivado correctamente", type: 'success' });
-        
-        // Re-fetch explícito de clientes para asegurar sincronización
-        if (user) {
-            const refreshed = await dbProvider.getClients(user.uid);
-            setClients(refreshed);
-            
-            // Forzar actualización del perfil de entrenador para sincronizar límites e historial sin caché obsoleta
-            try {
-                const freshUser = await dbProvider.getCurrentUser(true);
-                if (freshUser) {
-                    const now = new Date();
-                    let normalizedUser = normalizeSubscription(freshUser, now);
-                    normalizedUser = resetWeeklyUsageIfNeeded(normalizedUser, now);
-                    setUser(normalizedUser);
-                    localStorage.setItem('mvptrainer_cached_user', JSON.stringify(normalizedUser));
-                    appLog("USER PROFILE SYNC AFTER DELETE SUCCESSFUL");
-                }
-            } catch (err) {
-                console.warn("Could not force refresh user profile after delete:", err);
-            }
-        }
-    } catch (e) {
-        console.error("HANDLE DELETE CLIENT ERROR:", e);
-        setToast({ title: "Error", message: "No se pudo eliminar el cliente. Verifica tu conexión.", type: 'error' });
-    }
   };
 
   const handleClientUpdate = async (data: Partial<Client>) => {
@@ -6061,12 +6087,12 @@ const App = () => {
              <PageTransition key={`client-${selectedClient?.id || 'none'}`} className="flex-1 min-h-0">
              <ClientDetail 
                 client={selectedClient} 
+                clients={clients}
                 user={user}
                 initialTab={clientInitialTab}
                 autoGenerateRequest={clientAutoGenerateRequest}
                 onBack={() => { setView('dashboard'); setSelectedClient(null); setClientInitialTab('profile'); setClientAutoGenerateRequest(null); }}
                 onUpdate={handleClientUpdate}
-                onDelete={() => selectedClient && handleDeleteClient(selectedClient.id)}
                 onEdit={() => {
                     setEditingClient(selectedClient);
                     setIsClientModalOpen(true);

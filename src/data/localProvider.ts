@@ -93,6 +93,7 @@ export const localProvider: IDBProvider = {
 
   async getClients(trainerId) { return []; },
   subscribeToClients(trainerId, callback, onStatus) { return () => {}; },
+  subscribeToBillingRecords(trainerId, callback) { callback([]); return () => {}; },
   async createClient(trainerId, data) { throw new Error("Not implemented"); },
   async updateClient(clientId, data) { throw new Error("Not implemented"); },
   async deleteClient(clientId) { throw new Error("Not implemented"); },

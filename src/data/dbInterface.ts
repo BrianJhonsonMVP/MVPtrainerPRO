@@ -13,6 +13,7 @@ export interface IDBProvider {
   // Clients
   getClients: (trainerId: string) => Promise<Client[]>;
   subscribeToClients: (trainerId: string, callback: (clients: Client[]) => void, onStatus?: (status: string) => void) => () => void;
+  subscribeToBillingRecords: (trainerId: string, callback: (records: BillingRecord[]) => void) => () => void;
   createClient: (trainerId: string, data: any) => Promise<Client & { updatedUsage?: any }>;
   updateClient: (clientId: string, data: any) => Promise<void>;
   deleteClient: (clientId: string) => Promise<void>;

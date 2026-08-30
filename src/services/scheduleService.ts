@@ -86,7 +86,7 @@ export const trainsOnDate = (client: Client, date = new Date()) =>
       && client.trainingDays.some(day => DAY_ALIASES[normalizeDayName(day)] === date.getDay());
   })();
 
-const parseClockMinutes = (value = '') => {
+export const parseClockMinutes = (value = '') => {
   const normalized = value.trim().toUpperCase();
   const match = normalized.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/);
   if (!match) return null;
@@ -161,6 +161,59 @@ export const getSessionsForDate = (clients: Client[], date = new Date(), now = n
     .map(client => getClientSessionForDate(client, date, now))
     .filter((session): session is TrainerSession => Boolean(session))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+export interface ScheduleConflict {
+  client: Client;
+  day?: string;
+  session?: TrainerSession;
+}
+
+const rangesOverlap = (start: number, end: number, otherStart: number, otherEnd: number) =>
+  start < otherEnd && end > otherStart;
+
+export const findRecurringScheduleConflict = (
+  clients: Client[],
+  input: { clientId?: string; trainingDays: string[]; startTime: string; endTime: string }
+): ScheduleConflict | null => {
+  const start = parseClockMinutes(input.startTime);
+  const end = parseClockMinutes(input.endTime);
+  if (start === null || end === null || start >= end) return null;
+
+  for (const client of clients.filter(isActiveClient)) {
+    if (input.clientId && client.id === input.clientId) continue;
+    const range = parseTrainingRange(client.trainingTime);
+    if (!range) continue;
+    const sharedDay = input.trainingDays.find(day =>
+      client.trainingDays?.some(existing => normalizeDayName(existing) === normalizeDayName(day))
+    );
+    if (sharedDay && rangesOverlap(start, end, range.startMinutes, range.endMinutes)) {
+      return { client, day: sharedDay };
+    }
+  }
+  return null;
+};
+
+export const findDateScheduleConflict = (
+  clients: Client[],
+  date: Date,
+  startTime: string,
+  endTime: string,
+  excludedClientId?: string
+): ScheduleConflict | null => {
+  const start = parseClockMinutes(startTime);
+  const end = parseClockMinutes(endTime);
+  if (start === null || end === null || start >= end) return null;
+  const session = getSessionsForDate(clients, date, date).find(candidate =>
+    candidate.client.id !== excludedClientId
+    && rangesOverlap(
+      start,
+      end,
+      candidate.start.getHours() * 60 + candidate.start.getMinutes(),
+      candidate.end.getHours() * 60 + candidate.end.getMinutes()
+    )
+  );
+  return session ? { client: session.client, session } : null;
+};
 
 const countFreeSlots = (sessions: TrainerSession[]) => {
   if (sessions.length === 0) return 1;

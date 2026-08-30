@@ -23,6 +23,7 @@ import {
   formatDuration,
   formatSessionCountdown,
   formatSessionTime,
+  findDateScheduleConflict,
   getDaySchedule,
   getNextSession,
   getWeekSchedule,
@@ -86,6 +87,7 @@ const COPY = {
     editSessionTitle: 'Ajustar esta sesión',
     editSessionHint: 'El horario semanal del cliente no cambiará.',
     saveMove: 'Guardar nuevo horario'
+    ,scheduleConflict: 'Ese horario ya está ocupado por'
   },
   en: {
     title: 'My Schedule',
@@ -131,6 +133,7 @@ const COPY = {
     editSessionTitle: 'Adjust this session',
     editSessionHint: "The client's weekly schedule will not change.",
     saveMove: 'Save new time'
+    ,scheduleConflict: 'That time is already booked with'
   }
 };
 
@@ -214,6 +217,17 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({
   };
 
   const saveException = async (session: TrainerSession, type: 'cancelled' | 'rescheduled', startTime?: string, endTime?: string) => {
+    if (type === 'rescheduled' && startTime && endTime) {
+      const conflict = findDateScheduleConflict(clients, session.date, startTime, endTime, session.client.id);
+      if (conflict) {
+        onShowToast?.({
+          title: activeLanguage === 'en' ? 'Schedule conflict' : 'Horario ocupado',
+          message: `${copy.scheduleConflict} ${conflict.client.name}.`,
+          type: 'warning'
+        });
+        return;
+      }
+    }
     setSavingException(true);
     try {
       const date = toScheduleDateKey(session.date);
@@ -510,36 +524,91 @@ const WeekView = ({
 }) => {
   const copy = COPY[language];
   const locale = language === 'en' ? 'en-US' : 'es-PE';
+  const allSessions = schedule.flatMap(day => day.sessions);
+  const firstMinute = allSessions.length
+    ? Math.min(...allSessions.map(session => session.start.getHours() * 60 + session.start.getMinutes()))
+    : 8 * 60;
+  const lastMinute = allSessions.length
+    ? Math.max(...allSessions.map(session => session.end.getHours() * 60 + session.end.getMinutes()))
+    : 20 * 60;
+  const gridStart = Math.max(0, Math.min(8 * 60, Math.floor(firstMinute / 60) * 60));
+  const gridEnd = Math.min(24 * 60, Math.max(20 * 60, Math.ceil(lastMinute / 60) * 60));
+  const slotMinutes = 30;
+  const slotCount = Math.max(1, Math.ceil((gridEnd - gridStart) / slotMinutes));
+  const rowFor = (date: Date) => Math.floor(((date.getHours() * 60 + date.getMinutes()) - gridStart) / slotMinutes) + 1;
+  const spanFor = (session: TrainerSession) => Math.max(1, Math.ceil(session.durationMinutes / slotMinutes));
+  const totalSessions = allSessions.length;
+  const scheduledMinutes = schedule.reduce((sum, day) => sum + day.scheduledMinutes, 0);
+  const busiestDay = schedule.reduce((current, day) => day.sessions.length > current.sessions.length ? day : current, schedule[0]);
+
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-black uppercase tracking-[0.06em] text-zinc-300">{copy.weeklyTitle}</h2>
-      <div className="space-y-2">
-        {schedule.map(day => (
-          <div key={day.date.toISOString()} className="grid gap-3 rounded-xl border border-zinc-800 bg-[#111620] p-4 sm:grid-cols-[120px_130px_1fr] sm:items-center">
-            <div>
-              <p className="text-sm font-black capitalize text-white">{day.date.toLocaleDateString(locale, { weekday: 'long' })}</p>
-              <p className="mt-1 text-[10px] text-zinc-600">{day.date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}</p>
+    <section className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-sm font-black uppercase tracking-[0.06em] text-zinc-300">{copy.weeklyTitle}</h2>
+          <p className="mt-1 text-xs text-zinc-600">
+            {language === 'en' ? 'Your complete week, organized by time.' : 'Tu semana completa, organizada por horas.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[10px] font-bold">
+          <span className="rounded-lg border border-zinc-800 bg-[#111620] px-3 py-2 text-zinc-300">{totalSessions} {copy.sessions.toLowerCase()}</span>
+          <span className="rounded-lg border border-zinc-800 bg-[#111620] px-3 py-2 text-zinc-300">{formatDuration(scheduledMinutes, language)}</span>
+          {busiestDay?.sessions.length > 0 && <span className="rounded-lg border border-violet-500/20 bg-violet-500/8 px-3 py-2 text-violet-200">
+            {language === 'en' ? 'Busiest:' : 'Más cargado:'} {busiestDay.date.toLocaleDateString(locale, { weekday: 'long' })}
+          </span>}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d1119]">
+        <div className="overflow-x-auto custom-scrollbar">
+          <div className="min-w-[920px]">
+            <div className="grid grid-cols-[68px_repeat(7,minmax(116px,1fr))] border-b border-zinc-800 bg-[#111620]">
+              <div className="border-r border-zinc-800 p-3 text-[9px] font-black uppercase text-zinc-600">{language === 'en' ? 'Time' : 'Hora'}</div>
+              {schedule.map(day => {
+                const isToday = toScheduleDateKey(day.date) === toScheduleDateKey(new Date());
+                return <div key={day.date.toISOString()} className={`border-r border-zinc-800 p-3 text-center last:border-r-0 ${isToday ? 'bg-violet-500/8' : ''}`}>
+                  <p className={`text-[10px] font-black uppercase ${isToday ? 'text-violet-300' : 'text-zinc-400'}`}>{day.date.toLocaleDateString(locale, { weekday: 'short' })}</p>
+                  <p className="mt-1 text-xs font-black text-white">{day.date.getDate()}</p>
+                </div>;
+              })}
             </div>
-            <div>
-              <p className="text-xs font-black text-violet-200">
-                {day.sessions.length} {day.sessions.length === 1 ? copy.sessionSingular : copy.sessions.toLowerCase()}
-              </p>
-              <p className="mt-1 text-[10px] text-zinc-600">{formatDuration(day.scheduledMinutes, language)}</p>
+
+            <div
+              className="relative grid grid-cols-[68px_repeat(7,minmax(116px,1fr))]"
+              style={{ gridTemplateRows: `repeat(${slotCount}, 32px)` }}
+            >
+              {Array.from({ length: slotCount }, (_, index) => {
+                const minute = gridStart + index * slotMinutes;
+                const isHour = minute % 60 === 0;
+                return <React.Fragment key={minute}>
+                  {isHour && <div className="pointer-events-none z-10 border-r border-zinc-800 pr-2 pt-1 text-right text-[9px] font-bold text-zinc-600" style={{ gridColumn: 1, gridRow: index + 1 }}>
+                    {formatSessionTime(new Date(2026, 0, 1, Math.floor(minute / 60), minute % 60), language)}
+                  </div>}
+                  <div className={`pointer-events-none border-t ${isHour ? 'border-zinc-800' : 'border-zinc-900/70'}`} style={{ gridColumn: '2 / 9', gridRow: index + 1 }} />
+                </React.Fragment>;
+              })}
+
+              {schedule.map((day, dayIndex) => (
+                <div key={`column-${day.date.toISOString()}`} className="pointer-events-none border-r border-zinc-800/80 last:border-r-0" style={{ gridColumn: dayIndex + 2, gridRow: `1 / ${slotCount + 1}` }} />
+              ))}
+
+              {schedule.flatMap((day, dayIndex) => day.sessions.map(session => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => onOpenClient(session.client)}
+                  className="z-20 m-1 overflow-hidden rounded-lg border border-violet-400/30 bg-[linear-gradient(135deg,rgba(139,92,246,0.28),rgba(44,31,82,0.92))] px-2 py-1.5 text-left shadow-[0_8px_24px_rgba(0,0,0,0.22)] transition hover:border-violet-300 hover:brightness-110"
+                  style={{ gridColumn: dayIndex + 2, gridRow: `${rowFor(session.start)} / span ${spanFor(session)}` }}
+                  title={`${formatSessionTime(session.start, language)} - ${formatSessionTime(session.end, language)} · ${session.client.name}`}
+                >
+                  <span className="block truncate text-[10px] font-black text-white">{session.client.name}</span>
+                  <span className="mt-0.5 block truncate text-[9px] font-bold text-violet-200">{formatSessionTime(session.start, language)} - {formatSessionTime(session.end, language)}</span>
+                </button>
+              )))}
             </div>
-            {day.sessions.length ? (
-              <div className="flex flex-wrap gap-2">
-                {day.sessions.map(session => (
-                  <button key={session.id} type="button" onClick={() => onOpenClient(session.client)} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950/50 px-3 text-[11px] font-bold text-zinc-300 hover:border-violet-500/30">
-                    <span className="text-violet-300">{formatSessionTime(session.start, language)}</span>
-                    <span>{session.client.name}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-zinc-600">{copy.noSessions}</p>
-            )}
           </div>
-        ))}
+        </div>
+        {totalSessions === 0 && <div className="border-t border-zinc-800 px-4 py-5 text-center text-xs text-zinc-600">{copy.noSessions}</div>}
       </div>
     </section>
   );

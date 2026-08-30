@@ -8,7 +8,7 @@ SaaS web/PWA para personal trainers. La app está pensada primero para celular, 
 - Express local en `server.ts`
 - Supabase Auth + Postgres + RLS
 - Gemini vía `GEMINI_API_KEY` o `GOOGLE_API_KEY`
-- PWA básica con `manifest.json` y `sw.js`
+- PWA básica con `public/manifest.webmanifest` y `public/sw.js`
 
 ## Configuración local
 
@@ -58,15 +58,11 @@ Studio se puede cerrar la ventana de variables de entorno; no se deben introduci
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` ni credenciales de produccion para
 una auditoria visual.
 
-## Reglas Free / PRO
+## Acceso al producto
 
-El plan Free, trial o cualquier usuario no-PRO activo usa límites históricos desde `public.trainer_usage`:
+La experiencia del producto es única: durante los primeros 21 días, el entrenador dispone de todas las funciones sin límites artificiales entre Free y PRO. Al finalizar la prueba, el trabajo permanece guardado pero las herramientas operativas se bloquean hasta activar una suscripción.
 
-- 2 clientes históricos
-- 2 rutinas IA históricas
-- 2 dietas IA históricas
-
-Borrar clientes, rutinas o dietas no reduce esos contadores. Solo `subscription.type === "pro"` con `isActive === true` desbloquea clientes/IA ilimitados y funciones premium.
+El acceso se resuelve desde el estado confirmado de la suscripción en Supabase. Un error temporal de red, una renovación de token o un valor nulo transitorio no deben degradar una cuenta confirmada ni conceder acceso a otra cuenta.
 
 ## Validación beta
 
@@ -77,6 +73,8 @@ Antes de beta real, probar:
 - generar, guardar y borrar rutina IA
 - generar, guardar y borrar dieta IA
 - registrar pagos básicos
-- validar límites Free históricos
+- validar los 21 días de acceso completo y el bloqueo posterior
+- comprobar que pagos históricos no cambien al pausar o finalizar clientes
+- comprobar conflictos al crear, editar y reprogramar sesiones
 - revisar móvil: 390x844, 414x896, 360x800 y desktop
 - validar PWA sin errores permanentes de service worker

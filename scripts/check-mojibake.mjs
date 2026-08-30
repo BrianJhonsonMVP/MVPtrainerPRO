@@ -6,7 +6,7 @@ const scanTargets = [
   'src',
   'public',
   'index.html',
-  'manifest.json',
+  'public/manifest.webmanifest',
   'metadata.json',
   'server.ts',
   'vite.config.ts',
