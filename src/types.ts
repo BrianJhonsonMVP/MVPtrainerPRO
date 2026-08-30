@@ -30,6 +30,9 @@ export interface UserSubscription {
   usage: SubscriptionUsage;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  provider?: 'internal' | 'mercadopago' | 'apple' | 'google' | 'stripe' | 'manual';
+  externalCustomerId?: string;
+  externalSubscriptionId?: string;
   currentPeriodEnd?: string;
 }
 

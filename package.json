@@ -1,11 +1,14 @@
 {
   "name": "copy-of-mvp-trainer-pro",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "mobile:sync": "npm run build && cap sync",
+    "mobile:android": "npm run mobile:sync && cap open android",
+    "mobile:ios": "npm run mobile:sync && cap open ios",
     "check:mojibake": "node scripts/check-mojibake.mjs",
     "lint": "tsc --noEmit",
     "test:premium": "tsx scripts/verify-premium-stability.ts",
@@ -13,6 +16,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
+    "@revenuecat/purchases-capacitor": "^13.4.2",
     "@supabase/supabase-js": "2.112.4",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -27,6 +36,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@types/node": "^22.14.0",
     "@types/qrcode": "1.5.5",
     "@vitejs/plugin-react": "^5.0.0",

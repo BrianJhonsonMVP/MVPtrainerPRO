@@ -16,6 +16,7 @@ export const supabase = isSupabaseEnabled()
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        flowType: 'pkce',
         storage: getBrowserStorage()
       }
     })

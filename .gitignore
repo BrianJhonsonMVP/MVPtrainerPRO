@@ -27,3 +27,4 @@ dist-ssr
 # Local QA and recovery artifacts
 qa-screenshots/
 restore-points/
+/icons/

@@ -8,6 +8,7 @@ type ProfileSubscriptionRow = {
 };
 
 type SubscriptionRow = {
+  provider?: UserSubscription['provider'] | null;
   plan_type?: string | null;
   status?: string | null;
   billing_interval?: string | null;
@@ -15,6 +16,8 @@ type SubscriptionRow = {
   trial_ends_at?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
+  external_customer_id?: string | null;
+  external_subscription_id?: string | null;
   updated_at?: string | null;
 };
 
@@ -85,6 +88,9 @@ const buildSubscription = (
     expiresAt: periodEnd,
     stripeCustomerId: subscriptionRow?.stripe_customer_id || undefined,
     stripeSubscriptionId: subscriptionRow?.stripe_subscription_id || undefined,
+    provider: subscriptionRow?.provider || undefined,
+    externalCustomerId: subscriptionRow?.external_customer_id || subscriptionRow?.stripe_customer_id || undefined,
+    externalSubscriptionId: subscriptionRow?.external_subscription_id || subscriptionRow?.stripe_subscription_id || undefined,
     usage: baseUsage()
   };
 };

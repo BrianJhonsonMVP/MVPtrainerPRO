@@ -6,7 +6,7 @@ import {
   Users, Activity, Dumbbell, Crown, ChevronRight, Menu, X, 
   Sparkles, Loader2, AlertCircle, DollarSign, 
   Edit2, Save, User as UserIcon, Clock, Trash2, Banknote, 
-  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square, Pause, Play, UserX, PlayCircle
+  AlertTriangle, ChevronDown, LogOut, Plus, ChevronUp, Flame, Zap, Utensils, Check, MessageSquare, Lock, Calendar, Copy, Timer, MapPin, Languages, Monitor, Smartphone, Tablet, ExternalLink, Mic, Square, Pause, Play, UserX, PlayCircle, RotateCcw
 } from 'lucide-react';
 import { BillingRecord, Client, Routine, User as AppUser, DietPlan, ClientPaymentInfo, PlanInterval, UserSubscription } from './types';
 import { generateWorkoutRoutine, generateDietPlan, getLastGeminiErrorMessage } from './services/geminiService';
@@ -71,6 +71,18 @@ import {
 } from './services/paymentService';
 import { findDuplicateClientByPhone, finishClientService, normalizeClientPhone, pauseClientService, reactivateClientService } from './services/clientService';
 import { authenticatedApiFetch } from './services/authenticatedApi';
+import {
+  getBillingPlatform,
+  hasNativeProEntitlement,
+  isNativeBilling,
+  loadNativePlans,
+  purchaseNativePlan,
+  restoreNativePurchases,
+  openNativeSubscriptionManagement,
+  getNativeCustomerInfo,
+  type NativePlan
+} from './services/platformBilling';
+import { signInWithOAuth } from './services/nativeOAuth';
 
 // --- HELPERS ---
 const VERBOSE_APP_LOGS = false;
@@ -1531,10 +1543,13 @@ const Toast = ({ title, message, type, onClose }: { title: string, message: stri
 };
 
 // --- REDESIGNED PAYWALL COMPONENT ---
-const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => void, user: AppUser, onShowToast: (t: any) => void, language: AppLanguage }) => {
+const PaywallPro = ({ onClose, user, onShowToast, onEntitlementConfirmed, language }: { onClose: () => void, user: AppUser, onShowToast: (t: any) => void, onEntitlementConfirmed: (user: AppUser) => void, language: AppLanguage }) => {
     const [loading, setLoading] = useState(false);
+    const [nativePlans, setNativePlans] = useState<NativePlan[]>([]);
     const copy = APP_COPY[language];
     const isLocalEnvironment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const nativeBilling = isNativeBilling();
+    const billingPlatform = getBillingPlatform();
     const trialExpired = isSubscriptionLocked(user) && user.subscription?.type === 'trial';
     const paywallNote = trialExpired
       ? (language === 'es' ? 'Tu información está protegida y no se eliminará.' : 'Your information is protected and will not be deleted.')
@@ -1548,9 +1563,47 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
         : 'Activate your plan to reopen client records, plans, schedule, payments, and sharing tools.')
       : copy.paywallSubtitle;
 
+    useEffect(() => {
+      if (!nativeBilling) return;
+      loadNativePlans(user.uid)
+        .then(setNativePlans)
+        .catch(error => console.warn('Native store products are not ready.', error));
+    }, [nativeBilling, user.uid]);
+
+    const priceFor = (interval: PlanInterval, webPrice: string) => nativePlans.find(plan => plan.interval === interval)?.price || webPrice;
+
+    const finishNativePurchase = (message: string) => {
+      onEntitlementConfirmed({
+        ...user,
+        subscription: {
+          ...user.subscription,
+          type: 'pro',
+          isActive: true,
+          status: 'active',
+          source: 'last_confirmed',
+          confirmedAt: new Date().toISOString(),
+          isSyncing: true,
+          provider: billingPlatform === 'ios' ? 'apple' : 'google'
+        }
+      });
+      onShowToast({
+        title: language === 'es' ? 'Suscripción confirmada' : 'Subscription confirmed',
+        message,
+        type: 'success'
+      });
+      onClose();
+    };
+
     const handleUpgrade = async (interval: PlanInterval) => {
         setLoading(true);
         try {
+            if (nativeBilling) {
+                const customerInfo = await purchaseNativePlan(user.uid, interval);
+                if (!hasNativeProEntitlement(customerInfo)) throw new Error('The store purchase is still pending confirmation.');
+                finishNativePurchase(language === 'es' ? 'La tienda confirmó tu acceso. Estamos sincronizando la cuenta.' : 'The store confirmed your access. Your account is syncing.');
+                return;
+            }
+
             if (isLocalEnvironment) {
                 onShowToast({ title: copy.paymentNotConfiguredTitle, message: copy.paymentLocalMessage, type: 'warning' });
                 return;
@@ -1561,11 +1614,9 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
                 return;
             }
 
-            const { data, error } = await supabase!.functions.invoke('create-checkout-session', {
+            const { data, error } = await supabase!.functions.invoke('create-mercadopago-subscription', {
                 body: { 
-                    interval,
-                    successUrl: window.location.origin + '?session_id={CHECKOUT_SESSION_ID}',
-                    cancelUrl: window.location.origin
+                    interval
                 }
             });
 
@@ -1576,11 +1627,29 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
                 throw new Error(copy.paymentCheckoutMissing);
             }
         } catch (e) {
-            console.error("Stripe Error:", e);
-            onShowToast({ title: copy.paymentNotConfiguredTitle, message: copy.paymentLocalPending, type: 'warning' });
+            console.error('Subscription checkout error:', e);
+            const wasCancelled = Boolean((e as any)?.userCancelled || (e as any)?.code === '1');
+            if (!wasCancelled) onShowToast({ title: copy.paymentNotConfiguredTitle, message: copy.paymentLocalPending, type: 'warning' });
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleRestore = async () => {
+      setLoading(true);
+      try {
+        const customerInfo = await restoreNativePurchases(user.uid);
+        if (!hasNativeProEntitlement(customerInfo)) {
+          onShowToast({ title: language === 'es' ? 'Sin compras activas' : 'No active purchases', message: language === 'es' ? 'La tienda no encontró una suscripción vigente para esta cuenta.' : 'The store did not find an active subscription for this account.', type: 'info' });
+          return;
+        }
+        finishNativePurchase(language === 'es' ? 'Tu compra anterior fue restaurada correctamente.' : 'Your previous purchase was restored successfully.');
+      } catch (error) {
+        console.error('Restore purchases error:', error);
+        onShowToast({ title: language === 'es' ? 'No se pudo restaurar' : 'Could not restore', message: language === 'es' ? 'Revisa la cuenta de la tienda e inténtalo nuevamente.' : 'Check your store account and try again.', type: 'error' });
+      } finally {
+        setLoading(false);
+      }
     };
 
     return (
@@ -1650,21 +1719,21 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
                     <span className="block text-sm font-bold text-white">{copy.monthly}</span>
                     <span className="block mt-0.5 text-[11px] text-zinc-500">{language === 'es' ? 'Flexibilidad mes a mes' : 'Month-to-month flexibility'}</span>
                   </span>
-                  <strong className="text-lg text-white">$14.99</strong>
+                  <strong className="text-lg text-white">{priceFor('monthly', (import.meta as any).env.VITE_WEB_PRICE_MONTHLY_LABEL || 'S/ 59.90')}</strong>
                 </button>
                 <button onClick={() => handleUpgrade('semiannual')} disabled={loading} className="w-full min-h-[64px] flex items-center justify-between gap-4 px-4 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:border-mvp-primary/40 hover:bg-zinc-900 transition-all disabled:opacity-60">
                   <span className="text-left">
                     <span className="block text-sm font-bold text-white">{copy.semiannual}</span>
                     <span className="block mt-0.5 text-[11px] text-zinc-500">{language === 'es' ? 'Para trabajar sin interrupciones' : 'Keep working without interruptions'}</span>
                   </span>
-                  <strong className="text-lg text-white">$79.99</strong>
+                  <strong className="text-lg text-white">{priceFor('semiannual', (import.meta as any).env.VITE_WEB_PRICE_SEMIANNUAL_LABEL || 'S/ 299.90')}</strong>
                 </button>
                 <button onClick={() => handleUpgrade('yearly')} disabled={loading} className="w-full min-h-[68px] flex items-center justify-between gap-4 px-4 rounded-xl border border-amber-100/30 bg-mvp-action text-[#171309] hover:bg-mvp-action-hover transition-all shadow-[0_10px_24px_rgba(245,196,81,0.14)] disabled:opacity-60">
                   <span className="text-left">
                     <span className="block text-sm font-black">{copy.yearly}</span>
                     <span className="block mt-0.5 text-[11px] font-bold opacity-70">{copy.yearlySavings}</span>
                   </span>
-                  <strong className="text-xl">$149.99</strong>
+                  <strong className="text-xl">{priceFor('yearly', (import.meta as any).env.VITE_WEB_PRICE_YEARLY_LABEL || 'S/ 499.90')}</strong>
                 </button>
               </div>
               {loading && (
@@ -1673,11 +1742,22 @@ const PaywallPro = ({ onClose, user, onShowToast, language }: { onClose: () => v
                   {language === 'es' ? 'Preparando pago...' : 'Preparing payment...'}
                 </div>
               )}
+              {nativeBilling && (
+                <button type="button" onClick={handleRestore} disabled={loading} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold text-zinc-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50">
+                  <RotateCcw size={14} />
+                  {language === 'es' ? 'Restaurar compra' : 'Restore purchases'}
+                </button>
+              )}
               {isLocalEnvironment && (
                 <p className="mt-5 text-center text-[11px] leading-relaxed text-zinc-600">
                   {copy.paymentLocalMessage}
                 </p>
               )}
+              <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-600">
+                {nativeBilling
+                  ? (language === 'es' ? `El cobro y la renovación serán administrados por ${billingPlatform === 'ios' ? 'App Store' : 'Google Play'}.` : `Billing and renewal are managed by ${billingPlatform === 'ios' ? 'the App Store' : 'Google Play'}.`)
+                  : (language === 'es' ? 'Cobro web seguro procesado por Mercado Pago.' : 'Secure web billing processed by Mercado Pago.')}
+              </p>
             </section>
           </div>
         </motion.div>
@@ -2129,19 +2209,8 @@ const AuthView = ({
 
     setSocialLoading(provider);
     try {
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/`,
-          skipBrowserRedirect: true,
-          queryParams: provider === 'google'
-            ? { access_type: 'offline', prompt: 'consent' }
-            : undefined
-        } as any
-      });
-      if (oauthError) throw oauthError;
-      if (!data?.url) throw new Error(`${provider} OAuth URL was not returned`);
-      window.location.assign(data.url);
+      await signInWithOAuth(supabase, provider);
+      await resolveSignedInUser();
     } catch (err) {
       if ((import.meta as any).env?.DEV) console.error("OAuth error:", err instanceof Error ? err.message : err);
       setError(provider === 'google' ? copy.googleMissing : copy.facebookMissing);
@@ -2330,6 +2399,9 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
   const planStatus = user ? getTranslatedPlanStatus(user, language, getPlanStatusLabel(user)) : null;
   const isPro = hasFullAccess(user);
   const [legalDocument, setLegalDocument] = useState<LegalDocument | null>(null);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const publicProfileReady = Boolean(
     user.publicProfile?.isPublished &&
     user.publicProfile?.description?.trim().length >= 20 &&
@@ -2349,6 +2421,32 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
       localStorage.removeItem('mvptrainer_cached_user');
       await dbProvider.signOut();
       window.location.reload();
+    }
+  };
+
+  const manageStoreSubscription = async () => {
+    try {
+      await openNativeSubscriptionManagement(user.uid);
+    } catch (error) {
+      console.error('Manage subscription error:', error);
+      onShowToast({ title: language === 'es' ? 'No se pudo abrir la tienda' : 'Could not open the store', message: language === 'es' ? 'Abre las suscripciones desde la configuración de App Store o Google Play.' : 'Open subscriptions from your App Store or Google Play settings.', type: 'warning' });
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (deleteConfirmation !== 'ELIMINAR') return;
+    setDeletingAccount(true);
+    try {
+      if (!supabase) throw new Error('Supabase is unavailable.');
+      const { error } = await supabase.functions.invoke('delete-account', { body: { confirmation: 'ELIMINAR' } });
+      if (error) throw error;
+      localStorage.removeItem('mvptrainer_cached_user');
+      await dbProvider.signOut().catch(() => undefined);
+      window.location.reload();
+    } catch (error) {
+      console.error('Delete account error:', error);
+      onShowToast({ title: language === 'es' ? 'No se eliminó la cuenta' : 'Account was not deleted', message: language === 'es' ? 'Comprueba tu conexión y cualquier suscripción activa en la tienda, luego inténtalo nuevamente.' : 'Check your connection and any active store subscription, then try again.', type: 'error' });
+      setDeletingAccount(false);
     }
   };
 
@@ -2408,6 +2506,12 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
                   </AppButton>
                )}
              </div>
+
+             {isPro && isNativeBilling() && (
+               <button type="button" onClick={manageStoreSubscription} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition-colors hover:border-violet-400/50 hover:text-white">
+                 <ExternalLink size={14} /> {language === 'es' ? 'Administrar suscripción' : 'Manage subscription'}
+               </button>
+             )}
 
              <div className="h-px bg-zinc-800 my-4" />
 
@@ -2486,9 +2590,33 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
                <button type="button" onClick={() => setLegalDocument('privacy')} className="hover:text-violet-300">{language === 'en' ? 'Privacy' : 'Privacidad'}</button>
                <button type="button" onClick={() => setLegalDocument('terms')} className="hover:text-violet-300">{language === 'en' ? 'Terms' : 'Términos'}</button>
              </div>
+             <button type="button" onClick={() => setShowDeleteAccount(true)} className="mt-4 text-[11px] font-semibold text-zinc-600 transition-colors hover:text-red-400">
+               {language === 'es' ? 'Eliminar mi cuenta y mis datos' : 'Delete my account and data'}
+             </button>
         </div>
       </div>
       {legalDocument && <LegalDialog document={legalDocument} language={language} onClose={() => setLegalDocument(null)} />}
+      {showDeleteAccount && createPortal(
+        <div className="fixed inset-0 z-[130] grid place-items-end bg-black/85 backdrop-blur-sm sm:place-items-center sm:p-4">
+          <section className="w-full max-w-md rounded-t-2xl border border-red-500/25 bg-[#0d1119] p-6 shadow-2xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+            <div className="flex items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-red-500/10 text-red-300"><Trash2 size={20} /></span>
+              <div>
+                <h2 id="delete-account-title" className="text-lg font-black text-white">{language === 'es' ? 'Eliminar cuenta definitivamente' : 'Permanently delete account'}</h2>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-400">{language === 'es' ? 'Se eliminarán tu cuenta, clientes, planes, agenda, imágenes y registros. Esta acción no se puede deshacer. Las suscripciones de App Store o Google Play deben cancelarse también desde la tienda.' : 'Your account, clients, plans, schedule, images and records will be deleted. This cannot be undone. App Store or Google Play subscriptions must also be canceled in the store.'}</p>
+              </div>
+            </div>
+            <label className="mt-5 block text-xs font-bold text-zinc-400">
+              {language === 'es' ? 'Escribe ELIMINAR para confirmar' : 'Type ELIMINAR to confirm'}
+              <input value={deleteConfirmation} onChange={event => setDeleteConfirmation(event.target.value.toUpperCase())} autoComplete="off" className="mt-2 w-full rounded-xl border border-zinc-700 bg-black px-4 py-3 text-sm font-black text-white outline-none focus:border-red-400" />
+            </label>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <AppButton type="button" variant="secondary" disabled={deletingAccount} onClick={() => { setShowDeleteAccount(false); setDeleteConfirmation(''); }}>{language === 'es' ? 'Cancelar' : 'Cancel'}</AppButton>
+              <AppButton type="button" variant="danger" disabled={deleteConfirmation !== 'ELIMINAR' || deletingAccount} onClick={deleteAccount}>{deletingAccount ? (language === 'es' ? 'Eliminando...' : 'Deleting...') : (language === 'es' ? 'Eliminar cuenta' : 'Delete account')}</AppButton>
+            </div>
+          </section>
+        </div>, document.body
+      )}
     </div>
   );
 };
@@ -5159,6 +5287,29 @@ const App = () => {
           const now = new Date();
           let normalizedUser = normalizeSubscription(result as any, now);
           normalizedUser = resetWeeklyUsageIfNeeded(normalizedUser, now);
+          if (isNativeBilling()) {
+            try {
+              const customerInfo = await getNativeCustomerInfo(normalizedUser.uid);
+              if (hasNativeProEntitlement(customerInfo)) {
+                const nativeProvider = getBillingPlatform() === 'ios' ? 'apple' : 'google';
+                normalizedUser = {
+                  ...normalizedUser,
+                  subscription: {
+                    ...normalizedUser.subscription,
+                    type: 'pro',
+                    isActive: true,
+                    status: 'active',
+                    source: 'last_confirmed',
+                    confirmedAt: now.toISOString(),
+                    isSyncing: normalizedUser.subscription?.provider !== nativeProvider,
+                    provider: nativeProvider
+                  }
+                };
+              }
+            } catch (nativeError) {
+              console.warn('Native entitlement check is temporarily unavailable.', nativeError);
+            }
+          }
           
           setUser(normalizedUser);
           localStorage.setItem('mvptrainer_cached_user', JSON.stringify(normalizedUser));
@@ -5206,7 +5357,7 @@ const App = () => {
     initAuth();
 
     // Suscripción permanente a cambios de auth
-    const unsubAuth = dbProvider.onAuthStateChanged((u, event) => {
+    const unsubAuth = dbProvider.onAuthStateChanged(async (u, event) => {
       if (!mounted) return;
       if ((import.meta as any).env?.DEV) {
           const authLogKey = `${event}:${u?.uid || 'none'}`;
@@ -5230,6 +5381,29 @@ const App = () => {
           const now = new Date();
           let normalizedUser = normalizeSubscription(u, now);
           normalizedUser = resetWeeklyUsageIfNeeded(normalizedUser, now);
+          if (isNativeBilling()) {
+            try {
+              const customerInfo = await getNativeCustomerInfo(normalizedUser.uid);
+              if (hasNativeProEntitlement(customerInfo)) {
+                const nativeProvider = getBillingPlatform() === 'ios' ? 'apple' : 'google';
+                normalizedUser = {
+                  ...normalizedUser,
+                  subscription: {
+                    ...normalizedUser.subscription,
+                    type: 'pro',
+                    isActive: true,
+                    status: 'active',
+                    source: 'last_confirmed',
+                    confirmedAt: now.toISOString(),
+                    isSyncing: normalizedUser.subscription?.provider !== nativeProvider,
+                    provider: nativeProvider
+                  }
+                };
+              }
+            } catch (nativeError) {
+              console.warn('Native entitlement refresh is temporarily unavailable.', nativeError);
+            }
+          }
           
           setUser(normalizedUser);
           localStorage.setItem('mvptrainer_cached_user', JSON.stringify(normalizedUser));
@@ -5795,7 +5969,7 @@ const App = () => {
         {toast && <Toast key={`${toast.type}-${toast.title}-${toast.message}`} {...toast} onClose={() => setToast(null)} />}
       </AnimatePresence>
       <AnimatePresence>
-      {showPaywall && <PaywallPro onClose={() => setShowPaywall(false)} user={user} onShowToast={(t: any) => setToast(t)} language={language} />}
+      {showPaywall && <PaywallPro onClose={() => setShowPaywall(false)} user={user} onShowToast={(t: any) => setToast(t)} onEntitlementConfirmed={handleUserUpdate} language={language} />}
       </AnimatePresence>
       <AnimatePresence>
       {isPlanAiModalOpen && (
