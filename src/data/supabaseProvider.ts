@@ -91,6 +91,9 @@ const mapPublicProfile = (value: any): PublicProfile | undefined => {
   if (!value) return undefined;
   return {
     professionalTitle: value.professional_title || value.professionalTitle || '',
+    trainerName: value.trainer_name || value.trainerName || '',
+    headline: value.headline || '',
+    callToAction: value.cta_text || value.callToAction || 'WhatsApp',
     description: value.description || '',
     services: Array.isArray(value.services) ? value.services : [],
     targets: Array.isArray(value.targets) ? value.targets : [],
@@ -100,6 +103,10 @@ const mapPublicProfile = (value: any): PublicProfile | undefined => {
     galleryImages: Array.isArray(value.gallery_images) ? value.gallery_images : [],
     modality: value.modality || 'ambas',
     location: value.location || '',
+    presentationMode: value.presentation_mode || value.presentationMode || 'mixed',
+    cardFormat: value.card_format || value.cardFormat || 'post',
+    cardTemplate: value.card_template || value.cardTemplate || 'balanced',
+    photoPositionY: Number(value.photo_position_y ?? value.photoPositionY ?? 50),
     slug: value.slug || '',
     isPublished: Boolean(value.is_published ?? value.isPublished)
   };
@@ -114,10 +121,12 @@ const toPublicProfileRow = (
   id: uid,
   slug: profile.slug?.trim() || uid,
   professional_title: profile.professionalTitle?.trim() || displayName,
+  trainer_name: profile.trainerName?.trim() || displayName,
+  headline: profile.headline?.trim() || null,
   description: profile.description?.trim() || null,
   avatar_url: profile.profileImageUrl || null,
   whatsapp_number: (profile.whatsAppNumber || '').replace(/\D/g, '') || null,
-  cta_text: 'WhatsApp',
+  cta_text: profile.callToAction?.trim() || 'WhatsApp',
   is_published: Boolean(profile.isPublished),
   brand_name: branding?.brandName?.trim() || displayName,
   logo_url: branding?.logoUrl || null,
@@ -127,6 +136,10 @@ const toPublicProfileRow = (
   targets: profile.targets || [],
   modality: profile.modality || 'ambas',
   location: profile.location?.trim() || null,
+  presentation_mode: profile.presentationMode || 'mixed',
+  card_format: profile.cardFormat || 'post',
+  card_template: profile.cardTemplate || 'balanced',
+  photo_position_y: Math.min(100, Math.max(0, profile.photoPositionY ?? 50)),
   background_color: profile.backgroundColor || '#07080d',
   updated_at: new Date().toISOString()
 });
@@ -960,7 +973,7 @@ export const supabaseProvider: IDBProvider = {
     const lookupColumn = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(uid) ? 'id' : 'slug';
     const { data, error } = await client
       .from('public_profiles')
-      .select('id, slug, professional_title, description, avatar_url, whatsapp_number, is_published, brand_name, logo_url, primary_color, secondary_color, services, targets, background_color, modality, location')
+      .select('id, slug, professional_title, trainer_name, headline, description, avatar_url, whatsapp_number, cta_text, is_published, brand_name, logo_url, primary_color, secondary_color, services, targets, background_color, modality, location, presentation_mode, card_format, card_template, photo_position_y')
       .eq(lookupColumn, uid)
       .eq('is_published', true)
       .single();
@@ -968,7 +981,7 @@ export const supabaseProvider: IDBProvider = {
     if (error || !data) return null;
     return {
       uid: data.id,
-      displayName: data.professional_title || data.brand_name || 'MVP Trainer',
+      displayName: data.trainer_name || data.brand_name || data.professional_title || 'MVP Trainer',
       branding: mapBranding(data),
       publicProfile: mapPublicProfile(data)
     };

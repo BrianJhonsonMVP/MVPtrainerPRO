@@ -1,5 +1,6 @@
 
 import { supabase, isSupabaseEnabled } from './supabaseClient';
+import { authenticatedApiFetch } from './authenticatedApi';
 import { Routine, DietPlan, Client } from "../types";
 
 let lastGeminiErrorMessage = "";
@@ -123,9 +124,8 @@ const postGeminiRequest = async (url: string, body: unknown) => {
   let localError: unknown = null;
 
   try {
-    localResponse = await fetch(url, {
+    localResponse = await authenticatedApiFetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal
     });

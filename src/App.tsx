@@ -69,6 +69,7 @@ import {
   toLocalDateInputValue
 } from './services/paymentService';
 import { finishClientService, pauseClientService, reactivateClientService } from './services/clientService';
+import { authenticatedApiFetch } from './services/authenticatedApi';
 
 // --- HELPERS ---
 const VERBOSE_APP_LOGS = false;
@@ -2275,7 +2276,11 @@ const AccountView = ({ user, clients, onShowPaywall, onBack, onUpdateUser, reque
   const publicProfileReady = Boolean(
     user.publicProfile?.isPublished &&
     user.publicProfile?.description?.trim().length >= 20 &&
-    user.publicProfile?.profileImageUrl &&
+    (user.publicProfile?.presentationMode === 'logo'
+      ? user.branding?.logoUrl
+      : user.publicProfile?.presentationMode === 'photo'
+        ? (user.publicProfile?.profileImageUrl || user.photoURL)
+        : (user.publicProfile?.profileImageUrl || user.photoURL || user.branding?.logoUrl)) &&
     user.publicProfile?.services?.length &&
     normalizeWhatsAppPhone(user.publicProfile?.whatsAppNumber).length >= 7
   );
@@ -3678,9 +3683,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
         setIsOrganizingVoice(true);
         try {
             const audioBase64 = await blobToBase64(blob);
-            const response = await fetch('/api/transcribe-client-goals', {
+            const response = await authenticatedApiFetch('/api/transcribe-client-goals', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     audioBase64,
                     mimeType: blob.type || 'audio/webm',
@@ -3932,9 +3936,8 @@ const ClientFormModal = ({ onClose, onSubmit, initialData, onShowToast, existing
 
         setIsOrganizingVoice(true);
         try {
-            const response = await fetch('/api/organize-client-goals', {
+            const response = await authenticatedApiFetch('/api/organize-client-goals', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ transcript, language })
             });
             if (!response.ok) throw new Error(language === 'en' ? 'Could not organize the transcript.' : 'No se pudo ordenar la transcripcion.');
@@ -4975,7 +4978,10 @@ const App = () => {
   // Check URL on load for public profile or checkout redirections
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const trainerId = urlParams.get('trainer') || urlParams.get('trainerId');
+    const publicPathMatch = window.location.pathname.match(/^\/entrenador\/([^/]+)\/?$/i);
+    const trainerId = publicPathMatch?.[1]
+      ? decodeURIComponent(publicPathMatch[1])
+      : urlParams.get('trainer') || urlParams.get('trainerId');
     const sessionId = urlParams.get('session_id');
     
     if (sessionId) {

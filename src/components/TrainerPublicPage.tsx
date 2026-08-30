@@ -90,8 +90,12 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
   );
   const primary = trainer?.branding?.primaryColor || '#8B5CF6';
   const secondary = trainer?.branding?.secondaryColor || '#050505';
-  const brandName = trainer?.branding?.brandName?.trim() || trainer?.displayName || 'MVP Trainer';
-  const portrait = profile?.profileImageUrl || trainer?.photoURL || '';
+  const trainerName = profile?.trainerName?.trim() || trainer?.displayName || 'Personal Trainer';
+  const brandName = trainer?.branding?.brandName?.trim() || trainerName;
+  const portrait = profile?.presentationMode === 'logo'
+    ? trainer?.branding?.logoUrl || ''
+    : profile?.profileImageUrl || trainer?.photoURL || trainer?.branding?.logoUrl || '';
+  const portraitIsLogo = profile?.presentationMode === 'logo' || (!profile?.profileImageUrl && !trainer?.photoURL && Boolean(trainer?.branding?.logoUrl));
   const ctaTextColor = getContrastTextColor(primary);
   const whatsAppUrl = useMemo(
     () => `https://wa.me/${phone}?text=${encodeURIComponent(copy.whatsappMessage)}`,
@@ -164,8 +168,9 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
               {profile?.professionalTitle || copy.eyebrow}
             </p>
             <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight sm:text-5xl">
-              {brandName}
+              {trainerName}
             </h1>
+            {profile?.headline && <p className="mt-4 max-w-2xl text-xl font-extrabold leading-8 text-white sm:text-2xl">{profile.headline}</p>}
             <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-300 sm:text-lg">
               {profile?.description || copy.defaultDescription}
             </p>
@@ -181,16 +186,16 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
               style={{ backgroundColor: primary, color: ctaTextColor }}
             >
               <MessageCircle className="h-5 w-5" aria-hidden="true" />
-              {copy.contactWhatsApp}
+              {profile?.callToAction || copy.contactWhatsApp}
             </a>
           </div>
 
           <div className="relative mx-auto aspect-[4/5] w-full max-w-[280px] overflow-hidden rounded-lg border border-white/15 bg-[#11141d]">
             {portrait ? (
-              <img src={portrait} alt={brandName} className="h-full w-full object-cover" />
+              <img src={portrait} alt={trainerName} className={`h-full w-full ${portraitIsLogo ? 'object-contain p-10' : 'object-cover'}`} style={portraitIsLogo ? undefined : { objectPosition: `center ${profile?.photoPositionY ?? 50}%` }} />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-6xl font-black text-white/80">
-                {initialsFrom(brandName)}
+                {initialsFrom(trainerName)}
               </div>
             )}
             <div className="absolute inset-x-0 bottom-0 h-2" style={{ backgroundColor: primary }} />
@@ -232,12 +237,12 @@ const TrainerPublicPage: React.FC<Props> = ({ trainerId, language = 'es' }) => {
       )}
 
       <section className="mx-auto max-w-5xl px-5 py-14 text-center sm:px-8 sm:py-20">
-        <h2 className="text-2xl font-black sm:text-3xl">{copy.contactWhatsApp}</h2>
+        <h2 className="text-2xl font-black sm:text-3xl">{profile?.callToAction || copy.contactWhatsApp}</h2>
         <a
           href={whatsAppUrl}
           target="_blank"
           rel="noreferrer"
-          aria-label={`${copy.contactWhatsApp}: ${brandName}`}
+          aria-label={`${copy.contactWhatsApp}: ${trainerName}`}
           className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.05] px-5 py-3 text-sm font-black transition-colors hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/60"
         >
           <MessageCircle className="h-5 w-5" style={{ color: primary }} aria-hidden="true" />

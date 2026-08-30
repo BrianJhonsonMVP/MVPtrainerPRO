@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Camera, CheckCircle2, Eye, Globe, ImageDown, Loader2, MapPin, Plus, Save, Send, Share2, User, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Camera, CheckCircle2, Eye, Globe, ImageDown, MapPin, Plus, Save, Send, Share2, User, X } from 'lucide-react';
 import { dbProvider } from '../data';
 import { uploadTrainerAsset } from '../services/trainerAssetService';
 import { hasFullAccess } from '../services/subscriptionLogic';
@@ -12,12 +13,12 @@ type AppLanguage = 'es' | 'en';
 
 const COPY = {
   es: {
-    title: 'Mi pagina publica',
-    subtitle: 'Prepara una presentacion profesional para atraer nuevos clientes.',
+    title: 'Kit de captacion',
+    subtitle: 'Crea tu pagina publica y una pieza profesional lista para compartir.',
     ready: 'Lista para compartir',
     published: 'Publicada',
     draft: 'Borrador',
-    draftHint: 'Agrega una descripcion y un WhatsApp valido para activar tu perfil.',
+    draftHint: 'Completa tu oferta, WhatsApp y una foto o logo para activar tu perfil.',
     readyHint: 'Tu perfil tiene la informacion esencial para recibir consultas.',
     photo: 'Foto profesional',
     uploadPhoto: 'Subir foto',
@@ -42,7 +43,7 @@ const COPY = {
     imageDownloaded: 'La imagen se descargo porque este navegador no permite compartir archivos.',
     linkCopied: 'Enlace publico copiado.',
     invalidPhone: 'Ingresa un WhatsApp valido de al menos 7 digitos.',
-    missingInfo: 'Agrega una foto real, descripcion, WhatsApp y al menos un servicio antes de publicar.',
+    missingInfo: 'Agrega una foto o logo, descripcion, WhatsApp y al menos un servicio antes de publicar.',
     saveError: 'No se pudo guardar el perfil.',
     imageError: 'No se pudo crear la imagen para compartir.',
     uploadError: 'No se pudo subir la foto.',
@@ -62,17 +63,33 @@ const COPY = {
     draftSuccess: 'La página volvió a borrador y dejó de ser pública.',
     imagePreview: 'Vista previa de tu imagen',
     continueShare: 'Compartir o descargar',
+    identity: '1. Identidad visual',
+    photoMode: 'Foto',
+    logoMode: 'Logo',
+    mixedMode: 'Foto + logo',
+    format: '2. Formato',
+    post: 'Publicacion',
+    story: 'Historia',
+    style: '3. Estilo',
+    personal: 'Personal',
+    brand: 'Marca',
+    balanced: 'Equilibrado',
+    trainerName: 'Nombre profesional',
+    headline: 'Mensaje principal',
+    headlinePlaceholder: 'Ej: Transforma tu fisico con un plan que si puedes sostener',
+    callToAction: 'Llamada a la accion',
+    callToActionPlaceholder: 'Ej: Reserva tu evaluacion',
     lockedTitle: 'Pagina publica y kit de captacion',
     lockedDescription: 'Presenta tus servicios con una pagina publica y una imagen profesional lista para compartir.',
     lockedCta: 'Activar acceso'
   },
   en: {
-    title: 'My public page',
-    subtitle: 'Build a professional profile that helps you attract new clients.',
+    title: 'Lead kit',
+    subtitle: 'Create your public page and a professional asset ready to share.',
     ready: 'Ready to share',
     published: 'Published',
     draft: 'Draft',
-    draftHint: 'Add a description and a valid WhatsApp number to activate your profile.',
+    draftHint: 'Complete your offer, WhatsApp number, and a photo or logo to activate your profile.',
     readyHint: 'Your profile has the essential information needed to receive inquiries.',
     photo: 'Professional photo',
     uploadPhoto: 'Upload photo',
@@ -97,7 +114,7 @@ const COPY = {
     imageDownloaded: 'The image was downloaded because this browser cannot share files.',
     linkCopied: 'Public link copied.',
     invalidPhone: 'Enter a valid WhatsApp number with at least 7 digits.',
-    missingInfo: 'Add a real photo, description, WhatsApp number, and at least one service before publishing.',
+    missingInfo: 'Add a photo or logo, description, WhatsApp number, and at least one service before publishing.',
     saveError: 'The profile could not be saved.',
     imageError: 'The share image could not be created.',
     uploadError: 'The photo could not be uploaded.',
@@ -117,6 +134,22 @@ const COPY = {
     draftSuccess: 'The page is back in draft and no longer public.',
     imagePreview: 'Your image preview',
     continueShare: 'Share or download',
+    identity: '1. Visual identity',
+    photoMode: 'Photo',
+    logoMode: 'Logo',
+    mixedMode: 'Photo + logo',
+    format: '2. Format',
+    post: 'Post',
+    story: 'Story',
+    style: '3. Style',
+    personal: 'Personal',
+    brand: 'Brand',
+    balanced: 'Balanced',
+    trainerName: 'Professional name',
+    headline: 'Main message',
+    headlinePlaceholder: 'Example: Transform your body with a plan you can sustain',
+    callToAction: 'Call to action',
+    callToActionPlaceholder: 'Example: Book your assessment',
     lockedTitle: 'Public page and lead kit',
     lockedDescription: 'Present your services with a public page and a professional image ready to share.',
     lockedCta: 'Activate access'
@@ -138,6 +171,9 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
   const isPro = hasFullAccess(user);
   const [profile, setProfile] = useState<PublicProfile>({
     professionalTitle: user.publicProfile?.professionalTitle || '',
+    trainerName: user.publicProfile?.trainerName || user.displayName,
+    headline: user.publicProfile?.headline || '',
+    callToAction: user.publicProfile?.callToAction || (language === 'en' ? 'Book your assessment' : 'Reserva tu evaluacion'),
     description: user.publicProfile?.description || '',
     services: user.publicProfile?.services || [],
     targets: user.publicProfile?.targets || [],
@@ -147,6 +183,10 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
     galleryImages: user.publicProfile?.galleryImages || [],
     modality: user.publicProfile?.modality || 'ambas',
     location: user.publicProfile?.location || '',
+    presentationMode: user.publicProfile?.presentationMode || (user.branding?.logoUrl ? 'mixed' : 'photo'),
+    cardFormat: user.publicProfile?.cardFormat || 'post',
+    cardTemplate: user.publicProfile?.cardTemplate || 'balanced',
+    photoPositionY: user.publicProfile?.photoPositionY ?? 50,
     slug: user.publicProfile?.slug || `${slugify(user.branding?.brandName || user.displayName)}-${user.uid.slice(0, 5)}`,
     isPublished: Boolean(user.publicProfile?.isPublished)
   });
@@ -161,9 +201,17 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
   const [cardPreview, setCardPreview] = useState<{ file: File; url: string } | null>(null);
 
   const phoneDigits = useMemo(() => getPhoneDigits(profile.whatsAppNumber), [profile.whatsAppNumber]);
+  const publicUrl = useMemo(() => `${window.location.origin}/entrenador/${profile.slug || user.uid}`, [profile.slug, user.uid]);
+  const hasPhoto = Boolean(profile.profileImageUrl || user.photoURL);
+  const hasLogo = Boolean(user.branding?.logoUrl);
+  const hasSelectedIdentity = profile.presentationMode === 'photo'
+    ? hasPhoto
+    : profile.presentationMode === 'logo'
+      ? hasLogo
+      : hasPhoto || hasLogo;
   const profileReady = profile.description.trim().length >= 20
     && phoneDigits.length >= 7
-    && Boolean(profile.profileImageUrl)
+    && hasSelectedIdentity
     && profile.services.length > 0;
 
   const showMessage = (message: string, isError = false) => {
@@ -226,7 +274,7 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
     showMessage('');
     try {
       const cardLanguage: AppLanguage = language === 'en' ? 'en' : 'es';
-      const file = await generateTrainerSocialCard({ ...user, publicProfile: profile }, profile, cardLanguage);
+      const file = await generateTrainerSocialCard({ ...user, publicProfile: profile }, profile, cardLanguage, profile.isPublished ? publicUrl : undefined);
       setCardPreview(current => {
         if (current) URL.revokeObjectURL(current.url);
         return { file, url: URL.createObjectURL(file) };
@@ -244,7 +292,7 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
     if (!isPro) return onShowPaywall();
     if (!profile.isPublished) return showMessage(copy.publishFirst, true);
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}?trainer=${profile.slug || user.uid}`);
+      await navigator.clipboard.writeText(publicUrl);
       showMessage(copy.linkCopied);
     } catch {
       showMessage(copy.saveError, true);
@@ -281,6 +329,31 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
           {profileReady ? copy.readyHint : copy.draftHint}
         </p>
 
+        <div className="grid gap-5 border-y border-zinc-800 py-5 lg:grid-cols-3">
+          <ChoiceGroup
+            label={copy.identity}
+            value={profile.presentationMode || 'mixed'}
+            options={[
+              { value: 'photo', label: copy.photoMode, disabled: !hasPhoto },
+              { value: 'logo', label: copy.logoMode, disabled: !hasLogo },
+              { value: 'mixed', label: copy.mixedMode, disabled: !hasPhoto && !hasLogo }
+            ]}
+            onChange={value => setProfile(current => ({ ...current, presentationMode: value as PublicProfile['presentationMode'] }))}
+          />
+          <ChoiceGroup
+            label={copy.format}
+            value={profile.cardFormat || 'post'}
+            options={[{ value: 'post', label: copy.post }, { value: 'story', label: copy.story }]}
+            onChange={value => setProfile(current => ({ ...current, cardFormat: value as PublicProfile['cardFormat'] }))}
+          />
+          <ChoiceGroup
+            label={copy.style}
+            value={profile.cardTemplate || 'balanced'}
+            options={[{ value: 'personal', label: copy.personal }, { value: 'balanced', label: copy.balanced }, { value: 'brand', label: copy.brand }]}
+            onChange={value => setProfile(current => ({ ...current, cardTemplate: value as PublicProfile['cardTemplate'] }))}
+          />
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
           <div>
             <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.photo}</span>
@@ -301,8 +374,16 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
 
           <div className="space-y-5">
             <label className="block">
+              <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.trainerName}</span>
+              <input value={profile.trainerName || ''} onChange={event => setProfile({ ...profile, trainerName: event.target.value })} maxLength={70} className="w-full rounded-lg border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-violet-400" placeholder={user.displayName} />
+            </label>
+            <label className="block">
               <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.professionalTitle}</span>
               <input value={profile.professionalTitle || ''} onChange={event => setProfile({ ...profile, professionalTitle: event.target.value })} className="w-full rounded-lg border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-violet-400" placeholder={copy.professionalTitlePlaceholder} />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.headline}</span>
+              <input value={profile.headline || ''} onChange={event => setProfile({ ...profile, headline: event.target.value })} maxLength={100} className="w-full rounded-lg border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-violet-400" placeholder={copy.headlinePlaceholder} />
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.description}</span>
@@ -317,6 +398,10 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
               <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.whatsapp}</span>
               <input inputMode="tel" value={profile.whatsAppNumber} onChange={event => setProfile({ ...profile, whatsAppNumber: event.target.value })} className="w-full rounded-lg border border-zinc-700 bg-black px-4 py-3 text-white outline-none transition-colors focus:border-violet-400" placeholder="51999999999" />
               <span className="mt-1 block text-xs text-zinc-600">{copy.whatsappHint}</span>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">{copy.callToAction}</span>
+              <input value={profile.callToAction || ''} onChange={event => setProfile({ ...profile, callToAction: event.target.value })} maxLength={42} className="w-full rounded-lg border border-zinc-700 bg-black px-4 py-3 text-white outline-none focus:border-violet-400" placeholder={copy.callToActionPlaceholder} />
             </label>
           </div>
         </div>
@@ -364,30 +449,60 @@ const TrainerLandingEditor: React.FC<Props> = ({ user, onUpdateUser, onShowPaywa
 
       {!isPro && <PremiumLockOverlay title={copy.lockedTitle} description={copy.lockedDescription} cta={copy.lockedCta} onUnlock={onShowPaywall} />}
       {showPreview && <ProfilePreviewModal user={user} profile={profile} copy={copy} onClose={() => setShowPreview(false)} />}
-      {cardPreview && <CardPreviewModal preview={cardPreview} copy={copy} onClose={() => { URL.revokeObjectURL(cardPreview.url); setCardPreview(null); }} onShare={async () => { const result = await shareOrDownloadTrainerCard(cardPreview.file, language === 'en' ? 'en' : 'es'); showMessage(result === 'shared' ? copy.imageShared : copy.imageDownloaded); }} />}
+      {cardPreview && <CardPreviewModal preview={cardPreview} copy={copy} onClose={() => { URL.revokeObjectURL(cardPreview.url); setCardPreview(null); }} onShare={async () => {
+        const result = await shareOrDownloadTrainerCard(cardPreview.file, language === 'en' ? 'en' : 'es', { text: profile.headline || profile.description, url: profile.isPublished ? publicUrl : undefined });
+        if (result !== 'cancelled') showMessage(result === 'shared' ? copy.imageShared : copy.imageDownloaded);
+      }} />}
     </section>
   );
 };
 
 export default TrainerLandingEditor;
 
-const ProfilePreviewModal = ({ user, profile, copy, onClose }: { user: AppUser; profile: PublicProfile; copy: typeof COPY.es; onClose: () => void }) => (
+const ChoiceGroup = ({ label, value, options, onChange }: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
+  onChange: (value: string) => void;
+}) => (
+  <fieldset>
+    <legend className="mb-2 text-xs font-bold uppercase text-zinc-500">{label}</legend>
+    <div className="grid grid-cols-3 gap-1 rounded-lg border border-zinc-800 bg-black/40 p-1">
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          disabled={option.disabled}
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`min-h-10 rounded-md px-2 text-xs font-extrabold transition-colors ${value === option.value ? 'bg-violet-500 text-white' : 'text-zinc-400 hover:bg-white/[0.06] hover:text-white'} disabled:cursor-not-allowed disabled:opacity-30`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  </fieldset>
+);
+
+const ProfilePreviewModal = ({ user, profile, copy, onClose }: { user: AppUser; profile: PublicProfile; copy: typeof COPY.es; onClose: () => void }) => createPortal((
   <div className="fixed inset-0 z-[90] grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
     <section className="w-full max-w-md overflow-hidden rounded-2xl border border-violet-500/25 bg-[#0d1119] shadow-2xl" role="dialog" aria-modal="true">
       <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3"><span className="text-sm font-black text-white">{copy.preview}</span><IconButton type="button" onClick={onClose} aria-label="Cerrar"><X size={17} /></IconButton></header>
       <div className="p-6 text-center" style={{ backgroundColor: profile.backgroundColor }}>
-        <span className="mx-auto block h-28 w-28 overflow-hidden rounded-full border-2 border-violet-400/35 bg-zinc-900">{profile.profileImageUrl ? <img src={profile.profileImageUrl} alt="" className="h-full w-full object-cover" /> : <User size={42} className="m-auto mt-10 text-zinc-600" />}</span>
-        <h2 className="mt-4 text-2xl font-black text-white">{user.branding?.brandName || user.displayName}</h2>
+        <span className="mx-auto flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-2 border-violet-400/35 bg-zinc-900">{profile.presentationMode === 'logo' && user.branding?.logoUrl ? <img src={user.branding.logoUrl} alt="" className="h-full w-full object-contain p-2" /> : profile.profileImageUrl ? <img src={profile.profileImageUrl} alt="" className="h-full w-full object-cover" style={{ objectPosition: `center ${profile.photoPositionY ?? 50}%` }} /> : user.branding?.logoUrl ? <img src={user.branding.logoUrl} alt="" className="h-full w-full object-contain p-2" /> : <User size={42} className="text-zinc-600" />}</span>
+        <h2 className="mt-4 text-2xl font-black text-white">{profile.trainerName || user.displayName}</h2>
+        {user.branding?.brandName && user.branding.brandName !== (profile.trainerName || user.displayName) && <p className="mt-1 text-xs font-bold text-zinc-500">{user.branding.brandName}</p>}
         <p className="mt-1 text-sm font-bold text-violet-300">{profile.professionalTitle}</p>
+        {profile.headline && <p className="mx-auto mt-4 max-w-sm text-lg font-black leading-snug text-white">{profile.headline}</p>}
         <p className="mx-auto mt-4 max-w-sm text-sm leading-relaxed text-zinc-300">{profile.description || '...'}</p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">{profile.services.map(item => <span key={item} className="rounded-md border border-violet-400/20 bg-violet-500/10 px-2.5 py-1.5 text-xs font-bold text-violet-200">{item}</span>)}</div>
         {(profile.location || profile.modality) && <p className="mt-5 text-xs text-zinc-500">{profile.location}{profile.location && profile.modality ? ' · ' : ''}{profile.modality}</p>}
       </div>
     </section>
   </div>
-);
+), document.body);
 
-const CardPreviewModal = ({ preview, copy, onClose, onShare }: { preview: { file: File; url: string }; copy: typeof COPY.es; onClose: () => void; onShare: () => void }) => (
+const CardPreviewModal = ({ preview, copy, onClose, onShare }: { preview: { file: File; url: string }; copy: typeof COPY.es; onClose: () => void; onShare: () => void }) => createPortal((
   <div className="fixed inset-0 z-[95] grid place-items-center bg-black/85 p-4 backdrop-blur-sm">
     <section className="w-full max-w-md rounded-2xl border border-zinc-700 bg-[#0d1119] p-4 shadow-2xl" role="dialog" aria-modal="true">
       <header className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-white">{copy.imagePreview}</h2><IconButton type="button" onClick={onClose} aria-label="Cerrar"><X size={17} /></IconButton></header>
@@ -395,4 +510,4 @@ const CardPreviewModal = ({ preview, copy, onClose, onShare }: { preview: { file
       <ShareImageButton type="button" onClick={onShare} className="mt-4 w-full">{copy.continueShare}</ShareImageButton>
     </section>
   </div>
-);
+), document.body);

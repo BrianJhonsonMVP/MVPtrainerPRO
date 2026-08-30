@@ -1,14 +1,17 @@
 import dotenv from "dotenv";
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import path from "path";
+import { readFile } from "fs/promises";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import react from "@vitejs/plugin-react";
+import { createClient } from "@supabase/supabase-js";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
+const isCompiledServer = /(?:^|[\\/])dist[\\/]server\.cjs$/i.test(process.argv[1] || "");
+const IS_DEVELOPMENT = process.env.NODE_ENV !== "production" && !isCompiledServer;
 const serverLog = (...args: unknown[]) => {
   if (IS_DEVELOPMENT) console.log(...args);
 };
@@ -17,8 +20,82 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
+  const configuredOrigins = (process.env.ALLOWED_ORIGINS || process.env.PUBLIC_APP_URL || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  const allowedOrigins = new Set([
+    ...configuredOrigins,
+    ...(IS_DEVELOPMENT ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : [])
+  ]);
+
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      callback(new Error('Origen no permitido.'));
+    },
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
   app.use(express.json({ limit: "15mb" }));
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY
+    || process.env.VITE_SUPABASE_ANON_KEY
+    || '';
+  const supabaseAuth = supabaseUrl && supabasePublishableKey
+    ? createClient(supabaseUrl, supabasePublishableKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+      })
+    : null;
+
+  const requireAuthenticatedUser = async (req: Request, res: Response, next: NextFunction) => {
+    if (!supabaseAuth) {
+      return res.status(503).json({ error: 'La validación de sesión no está configurada.', code: 'AUTH_NOT_CONFIGURED' });
+    }
+
+    const authorization = req.headers.authorization || '';
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+    if (!token) {
+      return res.status(401).json({ error: 'Inicia sesión para usar la inteligencia artificial.', code: 'AUTH_REQUIRED' });
+    }
+
+    const { data, error } = await supabaseAuth.auth.getUser(token);
+    if (error || !data.user) {
+      return res.status(401).json({ error: 'Tu sesión no es válida o ha vencido.', code: 'AUTH_INVALID' });
+    }
+
+    res.locals.authUserId = data.user.id;
+    next();
+  };
+
+  const aiRateWindowMs = Number(process.env.AI_RATE_WINDOW_MS || 10 * 60 * 1000);
+  const aiRateLimit = Number(process.env.AI_RATE_LIMIT || 30);
+  const aiUsage = new Map<string, { count: number; resetAt: number }>();
+  const enforceAiRateLimit = (_req: Request, res: Response, next: NextFunction) => {
+    const userId = String(res.locals.authUserId || 'unknown');
+    const now = Date.now();
+    const current = aiUsage.get(userId);
+    const usage = !current || current.resetAt <= now
+      ? { count: 0, resetAt: now + aiRateWindowMs }
+      : current;
+
+    usage.count += 1;
+    aiUsage.set(userId, usage);
+    res.setHeader('X-RateLimit-Limit', aiRateLimit);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, aiRateLimit - usage.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(usage.resetAt / 1000));
+
+    if (usage.count > aiRateLimit) {
+      return res.status(429).json({
+        error: 'Has realizado muchas solicitudes seguidas. Espera unos minutos y vuelve a intentarlo.',
+        code: 'AI_RATE_LIMITED'
+      });
+    }
+    next();
+  };
+
+  const protectAi = [requireAuthenticatedUser, enforceAiRateLimit];
 
   const geminiKey = process.env.GEMINI_API_KEY;
   const googleKey = process.env.GOOGLE_API_KEY;
@@ -226,7 +303,7 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  app.post("/api/organize-client-goals", async (req, res) => {
+  app.post("/api/organize-client-goals", ...protectAi, async (req, res) => {
     try {
       if (!apiKey) throw new Error("Gemini API key is not configured.");
 
@@ -300,7 +377,7 @@ Responde SOLO JSON valido con esta estructura:
     }
   });
 
-  app.post("/api/transcribe-client-goals", async (req, res) => {
+  app.post("/api/transcribe-client-goals", ...protectAi, async (req, res) => {
     try {
       if (!apiKey) throw new Error("Gemini API key is not configured.");
 
@@ -364,7 +441,7 @@ ESTRUCTURA:
     }
   });
 
-  app.post("/api/generate-workout", async (req, res) => {
+  app.post("/api/generate-workout", ...protectAi, async (req, res) => {
     try {
       if (!apiKey) throw new Error("Gemini API key is not configured.");
 
@@ -451,7 +528,7 @@ ESTRUCTURA JSON OBLIGATORIA:
     }
   });
 
-  app.post("/api/generate-diet", async (req, res) => {
+  app.post("/api/generate-diet", ...protectAi, async (req, res) => {
     try {
       if (!apiKey) throw new Error("Gemini API key is not configured.");
 
@@ -529,7 +606,7 @@ ESTRUCTURA JSON OBLIGATORIA:
     }
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (IS_DEVELOPMENT) {
     const vite = await createViteServer({
       configFile: false,
       root: process.cwd(),
@@ -549,9 +626,56 @@ ESTRUCTURA JSON OBLIGATORIA:
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    const indexPath = path.join(distPath, "index.html");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get("/entrenador/:slug", async (req, res) => {
+      try {
+        let html = await readFile(indexPath, "utf8");
+        if (supabaseAuth) {
+          const profileKey = req.params.slug;
+          const lookupColumn = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(profileKey) ? "id" : "slug";
+          const { data } = await supabaseAuth
+            .from("public_profiles")
+            .select("slug, trainer_name, professional_title, headline, description, avatar_url, logo_url, brand_name")
+            .eq(lookupColumn, profileKey)
+            .eq("is_published", true)
+            .maybeSingle();
+          if (data) {
+            const escapeHtml = (value: unknown) => String(value || "")
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#039;");
+            const title = escapeHtml(data.trainer_name || data.brand_name || data.professional_title || "Personal Trainer");
+            const description = escapeHtml(data.headline || data.description || "Entrenamiento personalizado y contacto directo con tu entrenador.");
+            const image = escapeHtml(data.avatar_url || data.logo_url || `${process.env.PUBLIC_APP_URL || `${req.protocol}://${req.get("host")}`}/brand/mvp-trainer-pro-logo.png`);
+            const url = escapeHtml(`${process.env.PUBLIC_APP_URL || `${req.protocol}://${req.get("host")}`}/entrenador/${encodeURIComponent(data.slug)}`);
+            const socialMeta = [
+              `<meta property="og:type" content="profile" />`,
+              `<meta property="og:title" content="${title}" />`,
+              `<meta property="og:description" content="${description}" />`,
+              `<meta property="og:image" content="${image}" />`,
+              `<meta property="og:url" content="${url}" />`,
+              `<meta name="twitter:card" content="summary_large_image" />`,
+              `<meta name="twitter:title" content="${title}" />`,
+              `<meta name="twitter:description" content="${description}" />`,
+              `<meta name="twitter:image" content="${image}" />`
+            ].join("\n    ");
+            html = html
+              .replace(/\s*<meta\s+(?:property|name)="(?:og:[^"]+|twitter:[^"]+)"[^>]*>\s*/gi, "\n    ")
+              .replace(/<title>.*?<\/title>/i, `<title>${title}</title>`)
+              .replace("</head>", `    ${socialMeta}\n  </head>`);
+          }
+        }
+        res.type("html").send(html);
+      } catch (error) {
+        console.error("Public profile metadata error:", error);
+        res.sendFile(indexPath);
+      }
+    });
+    app.get("/{*splat}", (_req, res) => {
+      res.sendFile(indexPath);
     });
   }
 

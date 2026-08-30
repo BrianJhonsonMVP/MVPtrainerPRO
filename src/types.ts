@@ -42,6 +42,9 @@ export interface BrandingConfig {
 
 export interface PublicProfile {
   professionalTitle?: string;
+  trainerName?: string;
+  headline?: string;
+  callToAction?: string;
   description: string;
   services: string[];
   targets: string[];
@@ -51,6 +54,10 @@ export interface PublicProfile {
   galleryImages: string[];
   modality?: 'presencial' | 'online' | 'ambas';
   location?: string;
+  presentationMode?: 'photo' | 'logo' | 'mixed';
+  cardFormat?: 'post' | 'story';
+  cardTemplate?: 'personal' | 'brand' | 'balanced';
+  photoPositionY?: number;
   slug?: string;
   isPublished?: boolean;
 }
