@@ -2,6 +2,14 @@
 
 Este documento separa lo que ya vive en el codigo de lo que requiere cuentas, llaves o aprobaciones externas.
 
+Antes de preparar cualquier build de tienda, ejecutar:
+
+```bash
+npm run check:launch
+```
+
+El comando no imprime secretos. Comprueba la configuración cliente, los proyectos móviles, las páginas legales y el estado público de Google/Facebook.
+
 ## Arquitectura de cobro
 
 - Web: Mercado Pago Suscripciones crea el checkout. Su webhook confirma el estado en `public.subscriptions`.

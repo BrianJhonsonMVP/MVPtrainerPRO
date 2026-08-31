@@ -10,6 +10,7 @@
     "mobile:android": "npm run mobile:sync && cap open android",
     "mobile:ios": "npm run mobile:sync && cap open ios",
     "check:mojibake": "node scripts/check-mojibake.mjs",
+    "check:launch": "node scripts/check-launch-readiness.mjs",
     "lint": "tsc --noEmit",
     "test:premium": "tsx scripts/verify-premium-stability.ts",
     "start": "node dist/server.cjs",
