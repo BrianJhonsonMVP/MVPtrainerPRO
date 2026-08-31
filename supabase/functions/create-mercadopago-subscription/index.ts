@@ -25,12 +25,18 @@ const corsHeaders = (origin: string | null) => {
 const intervalConfig = (interval: BillingInterval) => {
   const suffix = interval === "monthly" ? "MONTHLY" : interval === "semiannual" ? "SEMIANNUAL" : "YEARLY";
   const frequency = interval === "monthly" ? 1 : interval === "semiannual" ? 6 : 12;
-  const amount = Number(Deno.env.get(`MERCADOPAGO_PRICE_${suffix}`));
+  const baseUsd = Number(Deno.env.get(`MVP_PRICE_${suffix}_USD`));
+  const currency = (Deno.env.get("MERCADOPAGO_CHARGE_CURRENCY") || "PEN").toUpperCase();
+  const configuredCharge = Number(Deno.env.get(`MERCADOPAGO_CHARGE_${suffix}`));
+  const amount = currency === "USD" && !Number.isFinite(configuredCharge) ? baseUsd : configuredCharge;
   const planId = Deno.env.get(`MERCADOPAGO_PLAN_${suffix}_ID`) || "";
-  if (!planId && (!Number.isFinite(amount) || amount <= 0)) {
-    throw new Error(`Missing Mercado Pago price or plan for ${interval}.`);
+  if (!Number.isFinite(baseUsd) || baseUsd <= 0) {
+    throw new Error(`Missing USD list price for ${interval}.`);
   }
-  return { frequency, amount, planId };
+  if (!planId && (!Number.isFinite(amount) || amount <= 0)) {
+    throw new Error(`Missing Mercado Pago ${currency} charge amount or plan for ${interval}.`);
+  }
+  return { frequency, amount, planId, baseUsd, currency };
 };
 
 Deno.serve(async (request: Request) => {
@@ -59,9 +65,9 @@ Deno.serve(async (request: Request) => {
     const appUrl = (Deno.env.get("APP_PUBLIC_URL") || "").replace(/\/$/, "");
     if (!accessToken || !appUrl) throw new Error("Mercado Pago is not configured.");
 
-    const { frequency, amount, planId } = intervalConfig(interval);
+    const { frequency, amount, planId, baseUsd, currency } = intervalConfig(interval);
     const payload: Record<string, unknown> = {
-      reason: `MVP Trainer Pro - ${interval}`,
+      reason: `MVP Trainer Pro - ${interval} (USD ${baseUsd.toFixed(2)})`,
       external_reference: user.id,
       payer_email: user.email,
       back_url: `${appUrl}/?billing=return`,
@@ -75,7 +81,7 @@ Deno.serve(async (request: Request) => {
         frequency,
         frequency_type: "months",
         transaction_amount: amount,
-        currency_id: Deno.env.get("MERCADOPAGO_CURRENCY") || "PEN"
+        currency_id: currency
       };
     }
 
@@ -96,7 +102,12 @@ Deno.serve(async (request: Request) => {
 
     const checkoutUrl = result.init_point || result.sandbox_init_point;
     if (!checkoutUrl) throw new Error("Mercado Pago did not return a checkout URL.");
-    return new Response(JSON.stringify({ url: checkoutUrl, subscriptionId: result.id }), { status: 200, headers: { ...cors, ...jsonHeaders } });
+    return new Response(JSON.stringify({
+      url: checkoutUrl,
+      subscriptionId: result.id,
+      listPrice: { amount: baseUsd, currency: "USD" },
+      checkoutPrice: planId ? null : { amount, currency }
+    }), { status: 200, headers: { ...cors, ...jsonHeaders } });
   } catch (error) {
     console.error("create-mercadopago-subscription", error instanceof Error ? error.message : error);
     return new Response(JSON.stringify({ error: "Subscription checkout is temporarily unavailable." }), { status: 500, headers: { ...cors, ...jsonHeaders } });

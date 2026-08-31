@@ -5,6 +5,32 @@ const config = getSupabaseConfig();
 
 export const isSupabaseEnabled = () => Boolean(config.url && config.anonKey);
 
+export type OAuthProviderAvailability = {
+  google: boolean;
+  facebook: boolean;
+};
+
+export const getOAuthProviderAvailability = async (): Promise<OAuthProviderAvailability> => {
+  if (!config.url || !config.anonKey) {
+    return { google: false, facebook: false };
+  }
+
+  try {
+    const response = await fetch(`${config.url}/auth/v1/settings`, {
+      headers: { apikey: config.anonKey }
+    });
+    if (!response.ok) return { google: false, facebook: false };
+
+    const settings = await response.json();
+    return {
+      google: settings?.external?.google === true,
+      facebook: settings?.external?.facebook === true
+    };
+  } catch {
+    return { google: false, facebook: false };
+  }
+};
+
 const getBrowserStorage = () => {
   if (typeof window === 'undefined') return undefined;
   return window.localStorage;

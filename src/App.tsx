@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { BillingRecord, Client, Routine, User as AppUser, DietPlan, ClientPaymentInfo, PlanInterval, UserSubscription } from './types';
 import { generateWorkoutRoutine, generateDietPlan, getLastGeminiErrorMessage } from './services/geminiService';
-import { supabase, isSupabaseEnabled } from './services/supabaseClient';
+import { supabase, isSupabaseEnabled, getOAuthProviderAvailability } from './services/supabaseClient';
 import { dbProvider } from './data';
 import { checkLimit, checkAndResetUsage, getPlanStatusLabel, clearStaleUserCache } from './services/subscriptionUtils';
 import {
@@ -1719,21 +1719,21 @@ const PaywallPro = ({ onClose, user, onShowToast, onEntitlementConfirmed, langua
                     <span className="block text-sm font-bold text-white">{copy.monthly}</span>
                     <span className="block mt-0.5 text-[11px] text-zinc-500">{language === 'es' ? 'Flexibilidad mes a mes' : 'Month-to-month flexibility'}</span>
                   </span>
-                  <strong className="text-lg text-white">{priceFor('monthly', (import.meta as any).env.VITE_WEB_PRICE_MONTHLY_LABEL || 'S/ 59.90')}</strong>
+                  <strong className="text-lg text-white">{priceFor('monthly', (import.meta as any).env.VITE_WEB_PRICE_MONTHLY_LABEL || 'US$ 14.99')}</strong>
                 </button>
                 <button onClick={() => handleUpgrade('semiannual')} disabled={loading} className="w-full min-h-[64px] flex items-center justify-between gap-4 px-4 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:border-mvp-primary/40 hover:bg-zinc-900 transition-all disabled:opacity-60">
                   <span className="text-left">
                     <span className="block text-sm font-bold text-white">{copy.semiannual}</span>
                     <span className="block mt-0.5 text-[11px] text-zinc-500">{language === 'es' ? 'Para trabajar sin interrupciones' : 'Keep working without interruptions'}</span>
                   </span>
-                  <strong className="text-lg text-white">{priceFor('semiannual', (import.meta as any).env.VITE_WEB_PRICE_SEMIANNUAL_LABEL || 'S/ 299.90')}</strong>
+                  <strong className="text-lg text-white">{priceFor('semiannual', (import.meta as any).env.VITE_WEB_PRICE_SEMIANNUAL_LABEL || 'US$ 79.99')}</strong>
                 </button>
                 <button onClick={() => handleUpgrade('yearly')} disabled={loading} className="w-full min-h-[68px] flex items-center justify-between gap-4 px-4 rounded-xl border border-amber-100/30 bg-mvp-action text-[#171309] hover:bg-mvp-action-hover transition-all shadow-[0_10px_24px_rgba(245,196,81,0.14)] disabled:opacity-60">
                   <span className="text-left">
                     <span className="block text-sm font-black">{copy.yearly}</span>
                     <span className="block mt-0.5 text-[11px] font-bold opacity-70">{copy.yearlySavings}</span>
                   </span>
-                  <strong className="text-xl">{priceFor('yearly', (import.meta as any).env.VITE_WEB_PRICE_YEARLY_LABEL || 'S/ 499.90')}</strong>
+                  <strong className="text-xl">{priceFor('yearly', (import.meta as any).env.VITE_WEB_PRICE_YEARLY_LABEL || 'US$ 149.99')}</strong>
                 </button>
               </div>
               {loading && (
@@ -1756,7 +1756,7 @@ const PaywallPro = ({ onClose, user, onShowToast, onEntitlementConfirmed, langua
               <p className="mt-3 text-center text-[10px] leading-relaxed text-zinc-600">
                 {nativeBilling
                   ? (language === 'es' ? `El cobro y la renovación serán administrados por ${billingPlatform === 'ios' ? 'App Store' : 'Google Play'}.` : `Billing and renewal are managed by ${billingPlatform === 'ios' ? 'the App Store' : 'Google Play'}.`)
-                  : (language === 'es' ? 'Cobro web seguro procesado por Mercado Pago.' : 'Secure web billing processed by Mercado Pago.')}
+                  : (language === 'es' ? 'Precio base en USD. Mercado Pago o tu banco mostrarán el importe final en moneda local antes de confirmar.' : 'Base price in USD. Mercado Pago or your bank will show the final local-currency amount before confirmation.')}
               </p>
             </section>
           </div>
@@ -2051,6 +2051,7 @@ const AuthView = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null);
+  const [oauthProviders, setOAuthProviders] = useState({ google: false, facebook: false });
   const [error, setError] = useState('');
   const [confirmMsg, setConfirmMsg] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -2059,6 +2060,14 @@ const AuthView = ({
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    getOAuthProviderAvailability().then(providers => {
+      if (mounted) setOAuthProviders(providers);
+    });
+    return () => { mounted = false; };
+  }, []);
 
   const isEmailValid = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -2306,16 +2315,16 @@ const AuthView = ({
                   <p className="text-sm text-zinc-400 mt-1">{intro}</p>
                 </div>
 
-            {(mode === 'login' || mode === 'register') && (
+            {(mode === 'login' || mode === 'register') && (oauthProviders.google || oauthProviders.facebook) && (
               <div className="space-y-3 mb-5">
-                <motion.button type="button" onClick={() => handleOAuth('google')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-social-button">
+                {oauthProviders.google && <motion.button type="button" onClick={() => handleOAuth('google')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-social-button">
                   {socialLoading === 'google' ? <Loader2 size={16} className="animate-spin" /> : <span className="auth-social-mark"><GoogleMark /></span>}
                   {copy.google}
-                </motion.button>
-                <motion.button type="button" onClick={() => handleOAuth('facebook')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-social-button">
+                </motion.button>}
+                {oauthProviders.facebook && <motion.button type="button" onClick={() => handleOAuth('facebook')} disabled={Boolean(socialLoading || loading)} whileTap={socialLoading || loading ? undefined : MOTION_TAP} transition={MOTION_BUTTON_TRANSITION} className="auth-social-button">
                   {socialLoading === 'facebook' ? <Loader2 size={16} className="animate-spin" /> : <span className="auth-social-mark"><FacebookMark /></span>}
                   {copy.facebook}
-                </motion.button>
+                </motion.button>}
                 <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider font-bold text-zinc-600">
                   <div className="h-px bg-zinc-800 flex-1" />
                   {copy.divider}
@@ -5151,6 +5160,7 @@ const App = () => {
     onConfirm: () => {}
   });
   const [toast, setToast] = useState<any>(null);
+  const [billingReturnPending, setBillingReturnPending] = useState(false);
 
   const handleLogout = async () => {
     if ((import.meta as any).env?.DEV) {
@@ -5190,10 +5200,18 @@ const App = () => {
       ? decodeURIComponent(publicPathMatch[1])
       : urlParams.get('trainer') || urlParams.get('trainerId');
     const sessionId = urlParams.get('session_id');
+    const billingReturn = urlParams.get('billing') === 'return';
     
-    if (sessionId) {
+    if (sessionId || billingReturn) {
         appLog("Returned from payment success! Clearing stale user cache...");
         clearStaleUserCache();
+        setBillingReturnPending(true);
+        setUser((current: AppUser | null) => current ? markSubscriptionSyncing(current) : current);
+        setToast({
+          title: language === 'es' ? 'Verificando tu pago' : 'Verifying your payment',
+          message: language === 'es' ? 'Mercado Pago está confirmando la suscripción. Tu acceso se actualizará automáticamente.' : 'Mercado Pago is confirming the subscription. Your access will update automatically.',
+          type: 'info'
+        });
         // Limpiar URL para no re-ejecutar en subsecuentes recargas
         const cleanUrl = window.location.origin + window.location.pathname;
         window.history.replaceState({}, document.title, cleanUrl);
@@ -5205,6 +5223,94 @@ const App = () => {
         setLoading(false); // Stop loading main app
     }
   }, []);
+
+  useEffect(() => {
+    if (!billingReturnPending || !user?.uid) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
+    let attempt = 0;
+    const maxAttempts = 12;
+
+    const verifySubscription = async () => {
+      attempt += 1;
+      try {
+        const refreshedUser = await dbProvider.getCurrentUser(true);
+        if (cancelled) return;
+
+        if (refreshedUser) {
+          const now = new Date();
+          const normalizedUser = resetWeeklyUsageIfNeeded(normalizeSubscription(refreshedUser, now), now);
+          if (normalizedUser.subscription?.type === 'pro' && normalizedUser.subscription?.isActive) {
+            setUser(normalizedUser);
+            localStorage.setItem('mvptrainer_cached_user', JSON.stringify(normalizedUser));
+            setBillingReturnPending(false);
+            setToast({
+              title: language === 'es' ? 'Plan activado' : 'Plan activated',
+              message: language === 'es' ? 'Tu suscripción ya está confirmada y el acceso completo está disponible.' : 'Your subscription is confirmed and full access is now available.',
+              type: 'success'
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        if ((import.meta as any).env?.DEV) console.warn('Subscription confirmation is still pending.', error);
+      }
+
+      if (attempt < maxAttempts && !cancelled) {
+        timer = window.setTimeout(verifySubscription, 2500);
+        return;
+      }
+
+      if (!cancelled) {
+        setBillingReturnPending(false);
+        setUser((current: AppUser | null) => current ? markSubscriptionSyncFailed(current) : current);
+        setToast({
+          title: language === 'es' ? 'Pago en confirmación' : 'Payment pending confirmation',
+          message: language === 'es' ? 'Mercado Pago aún no confirmó el cobro. Tu acceso se actualizará automáticamente cuando llegue la confirmación.' : 'Mercado Pago has not confirmed the charge yet. Your access will update automatically when confirmation arrives.',
+          type: 'info'
+        });
+      }
+    };
+
+    verifySubscription();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [billingReturnPending, user?.uid, language]);
+
+  useEffect(() => {
+    if (!supabase || !user?.uid) return;
+
+    let cancelled = false;
+    const refreshEntitlements = async () => {
+      try {
+        const refreshedUser = await dbProvider.getCurrentUser(true);
+        if (!refreshedUser || cancelled) return;
+        const now = new Date();
+        const normalizedUser = resetWeeklyUsageIfNeeded(normalizeSubscription(refreshedUser, now), now);
+        setUser(normalizedUser);
+        localStorage.setItem('mvptrainer_cached_user', JSON.stringify(normalizedUser));
+      } catch (error) {
+        if ((import.meta as any).env?.DEV) console.warn('Could not refresh subscription after realtime update.', error);
+      }
+    };
+
+    const channel = supabase
+      .channel(`subscription-entitlements-${user.uid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions', filter: `user_id=eq.${user.uid}` },
+        refreshEntitlements
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.uid]);
 
   // Auth & Data Subscription (Only if NOT public route)
   useEffect(() => {

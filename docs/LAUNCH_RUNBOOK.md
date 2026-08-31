@@ -19,10 +19,13 @@ Este documento separa lo que ya vive en el codigo de lo que requiere cuentas, ll
 ```text
 MERCADOPAGO_ACCESS_TOKEN
 MERCADOPAGO_WEBHOOK_SECRET
-MERCADOPAGO_PRICE_MONTHLY
-MERCADOPAGO_PRICE_SEMIANNUAL
-MERCADOPAGO_PRICE_YEARLY
-MERCADOPAGO_CURRENCY=PEN
+MVP_PRICE_MONTHLY_USD=14.99
+MVP_PRICE_SEMIANNUAL_USD=79.99
+MVP_PRICE_YEARLY_USD=149.99
+MERCADOPAGO_CHARGE_CURRENCY=PEN
+MERCADOPAGO_CHARGE_MONTHLY
+MERCADOPAGO_CHARGE_SEMIANNUAL
+MERCADOPAGO_CHARGE_YEARLY
 APP_PUBLIC_URL
 APP_ALLOWED_ORIGINS
 REVENUECAT_WEBHOOK_AUTHORIZATION
@@ -38,7 +41,7 @@ com.mvptrainer.pro://auth/callback
 ## Mercado Pago web
 
 1. Crear una aplicacion de produccion de Mercado Pago Peru.
-2. Definir precios finales. Si se crean planes de suscripcion, configurar sus IDs opcionales `MERCADOPAGO_PLAN_*_ID`.
+2. Mantener como lista oficial USD 14.99, USD 79.99 y USD 149.99. Si Mercado Pago liquida en PEN, configurar los importes locales exactos que mostrará antes de confirmar. Si se crean planes de suscripcion, configurar sus IDs opcionales `MERCADOPAGO_PLAN_*_ID`.
 3. Registrar el webhook:
 
 ```text
